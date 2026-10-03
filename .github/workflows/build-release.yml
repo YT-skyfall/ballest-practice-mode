@@ -48,14 +48,32 @@ jobs:
             release/Ballest-PracticeMode-v1.0.0.zip
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          gh release create $tag `
-            ".\installer\output\Ballest-PracticeMode-Installer.exe" `
-            ".\release\Ballest-PracticeMode-v1.0.0.zip" `
-            --title "Ballest Practice Mode $tag" `
-            --notes-file ".\RELEASE_NOTES.md"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "v1.0.0"
+          } else {
+            $tag = "${{ github.ref_name }}"
+          }
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag `
+              ".\installer\output\Ballest-PracticeMode-Installer.exe" `
+              ".\release\Ballest-PracticeMode-v1.0.0.zip" `
+              --clobber
+
+            gh release edit $tag `
+              --title "Ballest Practice Mode $tag" `
+              --notes-file ".\RELEASE_NOTES.md"
+          } else {
+            gh release create $tag `
+              ".\installer\output\Ballest-PracticeMode-Installer.exe" `
+              ".\release\Ballest-PracticeMode-v1.0.0.zip" `
+              --target main `
+              --title "Ballest Practice Mode $tag" `
+              --notes-file ".\RELEASE_NOTES.md"
+          }
