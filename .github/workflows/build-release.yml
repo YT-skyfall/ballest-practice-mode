@@ -1,0 +1,61 @@
+name: Build Practice Mode
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare pinned UE4SS payload
+        shell: powershell
+        run: .\installer\prepare-payload.ps1
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: powershell
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" .\installer\PracticeMode.iss
+
+      - name: Build manual ZIP
+        shell: powershell
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP "practice-mode-manual"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item .\mod\PracticeMode -Destination $stage -Recurse
+          Copy-Item .\release\README.txt -Destination $stage -ErrorAction SilentlyContinue
+          Compress-Archive -Path "$stage\*" -DestinationPath ".\release\Ballest-PracticeMode-v1.0.0.zip" -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ballest-PracticeMode-v1.0.0
+          path: |
+            installer/output/Ballest-PracticeMode-Installer.exe
+            release/Ballest-PracticeMode-v1.0.0.zip
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release create $tag `
+            ".\installer\output\Ballest-PracticeMode-Installer.exe" `
+            ".\release\Ballest-PracticeMode-v1.0.0.zip" `
+            --title "Ballest Practice Mode $tag" `
+            --notes-file ".\RELEASE_NOTES.md"
