@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Practice Mode for Ballest of Them All. Set a practice point, restart instantly, and practice without affecting leaderboards.">
+  <meta name="theme-color" content="#07090b">
+  <title>Ballest Practice Mode</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top">
+      <span class="ball-mark"></span>
+      <span><strong>Practice Mode</strong><small>for Ballest of Them All</small></span>
+    </a>
+    <nav>
+      <a href="#features">features</a>
+      <a href="#install">install</a>
+      <a href="#download">download</a>
+    </nav>
+    <a class="top-download release-link" data-asset="Ballest-PracticeMode-Installer.exe" href="#download">download</a>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-media">
+        <img src="assets/practice-mode-hud.png" alt="">
+        <div class="hero-shade"></div>
+      </div>
+      <div class="hero-content">
+        <div class="kicker"><span></span>unofficial community mod</div>
+        <h1>practice the section.<br><em>not the whole track.</em></h1>
+        <p>Set a practice point anywhere, restart back to it instantly, and repeat the part you actually want to learn.</p>
+        <div class="actions">
+          <a class="button primary release-link" data-asset="Ballest-PracticeMode-Installer.exe" href="#download">
+            <strong>download installer</strong>
+            <small>UE4SS included automatically</small>
+          </a>
+          <a class="button secondary" href="#install">
+            <strong>how it works</strong>
+            <small>simple setup</small>
+          </a>
+        </div>
+        <div class="facts">
+          <span><b>v1.0.0</b> stable</span>
+          <span><b>Windows</b></span>
+          <span><b>no manual UE4SS setup</b></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="section-label">practice mode</div>
+      <article><b>01</b><div><h2>set your point</h2><p>Move anywhere and save that exact position as your practice start.</p></div><span>POINT SET</span></article>
+      <article><b>02</b><div><h2>restart instantly</h2><p>Normal restart and death return to the point with the timer reset.</p></div><span>FAST RESET</span></article>
+      <article><b>03</b><div><h2>full restart stays normal</h2><p>Full restart still returns to the original track start.</p></div><span>ORIGINAL START</span></article>
+      <article><b>04</b><div><h2>leaderboard safe</h2><p>Practice runs are voided and cannot submit leaderboard scores.</p></div><span class="pink">RUN VOIDED</span></article>
+    </section>
+
+    <section class="install" id="install">
+      <div class="install-copy">
+        <div class="section-label">installation</div>
+        <h2>one download.<br>the installer handles the rest.</h2>
+        <p>The recommended installer detects Ballest and installs Practice Mode. If UE4SS is missing, the compatible build is installed automatically.</p>
+      </div>
+      <ol>
+        <li><b>01</b><div><h3>download the installer</h3><p>No separate UE4SS download is needed.</p></div></li>
+        <li><b>02</b><div><h3>open it</h3><p>The installer automatically looks for your Steam copy of Ballest. If needed, you can browse to the Win64 folder.</p></div></li>
+        <li><b>03</b><div><h3>click install</h3><p>UE4SS is added only if it is not already installed. Practice Mode is installed and enabled.</p></div></li>
+        <li><b>04</b><div><h3>launch Ballest</h3><p>Open <strong>Mods</strong> on the main menu and enable Practice Mode.</p></div></li>
+      </ol>
+    </section>
+
+    <section class="download" id="download">
+      <div>
+        <div class="section-label">recommended</div>
+        <h2>Practice Mode v1.0.0</h2>
+        <p>Use the installer for the easiest setup. The manual ZIP is available if you already manage UE4SS yourself.</p>
+      </div>
+      <div class="download-actions">
+        <a class="download-card primary release-link" data-asset="Ballest-PracticeMode-Installer.exe" href="#">
+          <span>recommended</span>
+          <strong>Installer.exe</strong>
+          <small>installs UE4SS automatically</small>
+        </a>
+        <a class="download-card release-link" data-asset="Ballest-PracticeMode-v1.0.0.zip" href="downloads/Ballest-PracticeMode-v1.0.0.zip">
+          <span>manual</span>
+          <strong>v1.0.0.zip</strong>
+          <small>for existing UE4SS setups</small>
+        </a>
+      </div>
+    </section>
+
+    <section class="notice">
+      <strong>unofficial community mod</strong>
+      <p>Not affiliated with or endorsed by the developers of Ballest of Them All. The installer bundles UE4SS under its MIT license.</p>
+    </section>
+  </main>
+
+  <footer><span>Ballest Practice Mode</span><span>v1.0.0</span></footer>
+
+  <script>
+    // On GitHub Pages, build release download URLs automatically from the
+    // <owner>.github.io/<repo>/ address. This means no username needs to be
+    // hard-coded into the website.
+    (() => {
+      const host = location.hostname;
+      const pathParts = location.pathname.split('/').filter(Boolean);
+      if (!host.endsWith('.github.io') || pathParts.length === 0) return;
+
+      const owner = host.slice(0, -'.github.io'.length);
+      const repo = pathParts[0];
+
+      document.querySelectorAll('.release-link[data-asset]').forEach(link => {
+        const asset = link.dataset.asset;
+        link.href = `https://github.com/${owner}/${repo}/releases/latest/download/${asset}`;
+      });
+    })();
+  </script>
+</body>
+</html>
