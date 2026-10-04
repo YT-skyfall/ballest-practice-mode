@@ -5,6 +5,7 @@ Small compatibility and reliability update.
 ## Fixed
 - Fixed an intermittent cold-launch issue where the **Mods** button could be missing from Ballest's main menu until the player entered a track and returned.
 - Practice Mode now scans for an already-created main-menu widget after startup instead of relying only on the new-object callback.
+- If the menu was already constructed before Practice Mode loaded, it now rebuilds the visible rows once so the **Mods** entry actually appears.
 - Startup recovery retries briefly and rebuilds each concrete main-menu widget at most once.
 
 ## Existing features
