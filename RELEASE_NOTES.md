@@ -16,7 +16,7 @@ First stable public release.
 **Ballest-PracticeMode-Installer.exe**
 
 The installer detects Ballest, installs UE4SS automatically if it is not already
-present, installs Practice Mode, and enables the mod.
+present, installs Practice Mode, and enables the mod. UE4SS debug windows are hidden on launch for a cleaner player experience, while Ctrl+O can still open the UE4SS GUI for troubleshooting.
 
 ## Uninstall
 **Ballest-PracticeMode-Uninstaller.exe**
