@@ -2746,13 +2746,15 @@ local function rebuildExistingMainMenuOnce(menu, source)
 end
 
 local function scanForExistingMainMenu(attempt)
-    local menus = FindAllOf("WBP_MenuTextGroup_C")
+    local findOk, menus = pcall(function()
+        return FindAllOf("WBP_MenuTextGroup_C")
+    end)
 
-    if not menus then
+    if not findOk or not menus then
         return false
     end
 
-    local found = false
+    local recovered = false
 
     for _, menu in ipairs(menus) do
         if isValidObject(menu) then
@@ -2765,8 +2767,6 @@ local function scanForExistingMainMenu(attempt)
                 and string.find(fullName, "/Engine/Transient", 1, true)
                 and getMenuType(fullName) == "MAIN MENU" then
 
-                found = true
-
                 if not mainMenuWasRebuilt(menu) then
                     print(
                         "[PracticeMode] Startup scan found existing MAIN MENU (attempt " ..
@@ -2774,28 +2774,62 @@ local function scanForExistingMainMenu(attempt)
                         ")\n"
                     )
 
-                    rebuildExistingMainMenuOnce(
+                    if rebuildExistingMainMenuOnce(
                         menu,
                         "startup scan " .. tostring(attempt)
-                    )
+                    ) then
+                        recovered = true
+                    end
                 else
-                    -- Keep the label synchronized on later recovery scans
-                    -- without rebuilding the same widget twice.
+                    -- Keep the label synchronized without rebuilding this
+                    -- concrete widget more than once.
                     updateMenuLabel(menu)
+                    recovered = true
                 end
             end
         end
     end
 
-    return found
+    return recovered
 end
 
-local function scheduleExistingMainMenuScan(delayMs, attempt)
-    ExecuteWithDelay(delayMs, function()
-        ExecuteInGameThread(function()
-            scanForExistingMainMenu(attempt)
+local function runMainMenuStartupRecovery(attempt, attemptsLeft)
+    ExecuteInGameThread(function()
+        if scanForExistingMainMenu(attempt) then
+            print(
+                "[PracticeMode] MAIN MENU startup recovery complete on attempt " ..
+                tostring(attempt) ..
+                "\n"
+            )
+            return
+        end
+
+        if attemptsLeft <= 0 then
+            print(
+                "[PracticeMode] MAIN MENU startup recovery timed out after " ..
+                tostring(attempt) ..
+                " attempts; new-object listener remains active\n"
+            )
+            return
+        end
+
+        -- Ballest's initial main menu can appear several seconds after UE4SS
+        -- finishes loading mods. Keep watching long enough to cover that cold
+        -- launch window instead of stopping after the first 3 seconds.
+        ExecuteWithDelay(500, function()
+            runMainMenuStartupRecovery(
+                attempt + 1,
+                attemptsLeft - 1
+            )
         end)
     end)
+end
+
+local function startMainMenuStartupRecovery()
+    -- 40 half-second retries = about 20 seconds after mod initialization.
+    -- This only runs during startup and stops immediately once the live menu
+    -- has been recovered.
+    runMainMenuStartupRecovery(1, 40)
 end
 
 local notifyOk, notifyError = pcall(function()
@@ -2899,13 +2933,9 @@ else
 end
 
 -- Recover the startup race where Ballest's main-menu widget was created before
--- NotifyOnNewObject was registered. Repeated scans are intentionally cheap and
--- each concrete widget is rebuilt at most once.
-scheduleExistingMainMenuScan(0, 1)
-scheduleExistingMainMenuScan(250, 2)
-scheduleExistingMainMenuScan(750, 3)
-scheduleExistingMainMenuScan(1500, 4)
-scheduleExistingMainMenuScan(3000, 5)
+-- NotifyOnNewObject was registered. Cold launches can create that widget well
+-- after Practice Mode initializes, so keep watching briefly until it exists.
+startMainMenuStartupRecovery()
 
 ---------------------------------------------------------
 -- MENU ACTION LISTENER
