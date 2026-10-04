@@ -44,6 +44,8 @@ Source: "..\mod\PracticeMode\*"; DestDir: "{app}\ue4ss\Mods\PracticeMode"; Flags
 Type: filesandordirs; Name: "{app}\ue4ss\Mods\PracticeMode"
 
 [Code]
+#include "QuietUE4SS.iss"
+
 var
   DependencyPage: TOutputMsgWizardPage;
 
@@ -185,8 +187,10 @@ begin
     'Automatic dependency setup',
     'UE4SS is handled for you.',
     'Practice Mode requires UE4SS. If a working UE4SS installation is already ' +
-    'present, the installer leaves it alone. Otherwise, the compatible UE4SS ' +
+    'present, the installer leaves its files alone. Otherwise, the compatible UE4SS ' +
     'build bundled with this installer is installed automatically.' + #13#10 + #13#10 +
+    'UE4SS debug windows are hidden on launch for a cleaner experience. ' +
+    'You can still open the UE4SS GUI with Ctrl+O if troubleshooting is needed.' + #13#10 + #13#10 +
     'You do not need to download UE4SS separately.'
   );
 end;
@@ -217,11 +221,33 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  SettingsPath, ModDir: string;
 begin
   if CurStep = ssPostInstall then
   begin
+    SettingsPath := ExpandConstant('{app}\ue4ss\UE4SS-settings.ini');
+    ModDir := ExpandConstant('{app}\ue4ss\Mods\PracticeMode');
+
+    ApplyQuietUE4SSWindowSettings(SettingsPath, ModDir);
+
     Log('Practice Mode installation complete.');
     if UE4SSAlreadyInstalled then
       Log('UE4SS detected/installed successfully.');
+  end;
+end;
+
+procedure CurUninstallStepChanged(
+  CurUninstallStep: TUninstallStep
+);
+var
+  SettingsPath, ModDir: string;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    SettingsPath := ExpandConstant('{app}\ue4ss\UE4SS-settings.ini');
+    ModDir := ExpandConstant('{app}\ue4ss\Mods\PracticeMode');
+
+    RestoreUE4SSWindowSettings(SettingsPath, ModDir);
   end;
 end;
