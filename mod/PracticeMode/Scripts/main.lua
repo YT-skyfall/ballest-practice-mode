@@ -10,10 +10,10 @@ local SET_POINT_ACTION = 251
 local EXIT_ACTION = 2
 
 -- Safety/compatibility contract.
--- Practice Mode v1.0.0 was tested against this exact public Steam build.
+-- Practice Mode v1.0.1 is tested against this exact public Steam build.
 -- Any unrecognized Ballest build is treated as unsafe until a new mod
 -- release explicitly adds support.
-local MOD_VERSION = "1.0.0"
+local MOD_VERSION = "1.0.1"
 local SAFETY_LOCK_FORMAT = "2"
 local SUPPORTED_STEAM_BUILD_IDS = {
     ["25608493"] = true
@@ -2624,15 +2624,38 @@ end
 -- MENU INJECTION / LABEL SYNC FALLBACK
 ---------------------------------------------------------
 
-local mainMenuStartupRebuildAttempted = false
+-- Main-menu construction is timing-sensitive. On some cold launches another
+-- UI host can finish creating Ballest's main menu before this Lua mod has
+-- registered NotifyOnNewObject. Track rebuilds per widget (not globally) and
+-- also scan for an already-existing live menu after startup.
+local rebuiltStartupMainMenus = {}
 
-local function rebuildExistingMainMenuOnce(menu)
-    if mainMenuStartupRebuildAttempted then
-        return
+local function mainMenuWasRebuilt(menu)
+    for _, existing in ipairs(rebuiltStartupMainMenus) do
+        if existing == menu and isValidObject(existing) then
+            return true
+        end
     end
 
+    return false
+end
+
+local function markMainMenuRebuilt(menu)
+    local kept = {}
+
+    for _, existing in ipairs(rebuiltStartupMainMenus) do
+        if isValidObject(existing) then
+            table.insert(kept, existing)
+        end
+    end
+
+    table.insert(kept, menu)
+    rebuiltStartupMainMenus = kept
+end
+
+local function rebuildExistingMainMenuOnce(menu, source)
     if not isValidObject(menu) then
-        return
+        return false
     end
 
     local fullName = ""
@@ -2640,18 +2663,52 @@ local function rebuildExistingMainMenuOnce(menu)
         fullName = menu:GetFullName()
     end)
 
-    if not nameOk or getMenuType(fullName) ~= "MAIN MENU" then
-        return
+    if not nameOk
+        or not string.find(fullName, "/Engine/Transient", 1, true)
+        or getMenuType(fullName) ~= "MAIN MENU" then
+
+        return false
     end
 
-    mainMenuStartupRebuildAttempted = true
+    if mainMenuWasRebuilt(menu) then
+        return true
+    end
 
-    -- On the first game launch the live main-menu widget can already have
-    -- built its visible rows by the time UE4SS finishes loading this mod.
-    -- ActionTypes can still be updated, but RefreshMenuLabels only updates
-    -- rows that already exist. Re-run the widget's PreConstruct once so
-    -- Ballest rebuilds the visible menu from the now-patched ActionTypes map.
-    ExecuteWithDelay(500, function()
+    -- A startup scan can find the widget while ActionTypes is still being
+    -- initialized. Do not consume this widget's one rebuild until injection
+    -- actually succeeds; a later retry may then finish the job.
+    local addOk, addError = pcall(function()
+        local actionTypes = menu.ActionTypes
+
+        if not actionTypes then
+            error("ActionTypes was nil during startup recovery")
+        end
+
+        actionTypes:Add(
+            MODS_ACTION,
+            FText(getModsLabel())
+        )
+    end)
+
+    if not addOk then
+        print(
+            "[PracticeMode] MAIN MENU startup injection not ready" ..
+            (source and (" (" .. tostring(source) .. ")") or "") ..
+            ": " ..
+            tostring(addError) ..
+            "\n"
+        )
+        return false
+    end
+
+    rememberMenu(menu)
+    markMainMenuRebuilt(menu)
+
+    -- If this menu already existed before our object listener was registered,
+    -- its visible rows may have been built without MODS_ACTION. Re-running
+    -- PreConstruct once for this exact widget rebuilds those rows. New menu
+    -- widgets can still receive their own one-time rebuild later.
+    ExecuteWithDelay(250, function()
         ExecuteInGameThread(function()
             if not isValidObject(menu) then
                 return
@@ -2663,7 +2720,9 @@ local function rebuildExistingMainMenuOnce(menu)
 
             if ok then
                 print(
-                    "[PracticeMode] MAIN MENU startup rebuild requested via PreConstruct\n"
+                    "[PracticeMode] MAIN MENU startup rebuild requested via PreConstruct" ..
+                    (source and (" (" .. tostring(source) .. ")") or "") ..
+                    "\n"
                 )
 
                 ExecuteWithDelay(100, function()
@@ -2680,6 +2739,61 @@ local function rebuildExistingMainMenuOnce(menu)
                     "\n"
                 )
             end
+        end)
+    end)
+
+    return true
+end
+
+local function scanForExistingMainMenu(attempt)
+    local menus = FindAllOf("WBP_MenuTextGroup_C")
+
+    if not menus then
+        return false
+    end
+
+    local found = false
+
+    for _, menu in ipairs(menus) do
+        if isValidObject(menu) then
+            local fullName = ""
+            local nameOk = pcall(function()
+                fullName = menu:GetFullName()
+            end)
+
+            if nameOk
+                and string.find(fullName, "/Engine/Transient", 1, true)
+                and getMenuType(fullName) == "MAIN MENU" then
+
+                found = true
+
+                if not mainMenuWasRebuilt(menu) then
+                    print(
+                        "[PracticeMode] Startup scan found existing MAIN MENU (attempt " ..
+                        tostring(attempt) ..
+                        ")\n"
+                    )
+
+                    rebuildExistingMainMenuOnce(
+                        menu,
+                        "startup scan " .. tostring(attempt)
+                    )
+                else
+                    -- Keep the label synchronized on later recovery scans
+                    -- without rebuilding the same widget twice.
+                    updateMenuLabel(menu)
+                end
+            end
+        end
+    end
+
+    return found
+end
+
+local function scheduleExistingMainMenuScan(delayMs, attempt)
+    ExecuteWithDelay(delayMs, function()
+        ExecuteInGameThread(function()
+            scanForExistingMainMenu(attempt)
         end)
     end)
 end
@@ -2760,7 +2874,7 @@ local notifyOk, notifyError = pcall(function()
             )
 
             if menuType == "MAIN MENU" then
-                rebuildExistingMainMenuOnce(menu)
+                rebuildExistingMainMenuOnce(menu, "new-object listener")
             end
 
             ExecuteWithDelay(300, function()
@@ -2783,6 +2897,15 @@ else
         "\n"
     )
 end
+
+-- Recover the startup race where Ballest's main-menu widget was created before
+-- NotifyOnNewObject was registered. Repeated scans are intentionally cheap and
+-- each concrete widget is rebuilt at most once.
+scheduleExistingMainMenuScan(0, 1)
+scheduleExistingMainMenuScan(250, 2)
+scheduleExistingMainMenuScan(750, 3)
+scheduleExistingMainMenuScan(1500, 4)
+scheduleExistingMainMenuScan(3000, 5)
 
 ---------------------------------------------------------
 -- MENU ACTION LISTENER
