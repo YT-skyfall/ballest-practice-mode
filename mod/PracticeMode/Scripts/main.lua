@@ -14,6 +14,7 @@ local EXIT_ACTION = 2
 -- Any unrecognized Ballest build is treated as unsafe until a new mod
 -- release explicitly adds support.
 local MOD_VERSION = "1.0.0"
+local SAFETY_LOCK_FORMAT = "2"
 local SUPPORTED_STEAM_BUILD_IDS = {
     ["25608493"] = true
 }
@@ -160,24 +161,87 @@ local function getWin64Directory()
     return parentDirectory(ue4ssDir)
 end
 
+local function fileExists(path)
+    local file = io.open(path, "r")
+
+    if not file then
+        return false
+    end
+
+    file:close()
+    return true
+end
+
+local function getCurrentDirectory()
+    local ok, pipe = pcall(function()
+        return io.popen("cd")
+    end)
+
+    if not ok or not pipe then
+        return nil
+    end
+
+    local directory = pipe:read("*l")
+    pipe:close()
+
+    if not directory or directory == "" then
+        return nil
+    end
+
+    return string.gsub(directory, "/", "\\")
+end
+
+local function findSteamManifestUpward(startDirectory)
+    local directory = startDirectory
+
+    for _ = 1, 12 do
+        if not directory or directory == "" then
+            break
+        end
+
+        local candidate =
+            joinPath(directory, "appmanifest_3339810.acf")
+
+        if fileExists(candidate) then
+            return candidate
+        end
+
+        local parent = parentDirectory(directory)
+
+        if not parent or parent == directory then
+            break
+        end
+
+        directory = parent
+    end
+
+    return nil
+end
+
 local function getSteamManifestPath()
+    -- UE4SS can report this script path relatively, so deriving the entire
+    -- Steam library path from debug.getinfo is not reliable on every machine.
+    -- Search upward from the process working directory first; Ballest normally
+    -- runs from its Win64 directory, which reaches steamapps in a few parents.
+    local currentDirectory = getCurrentDirectory()
+
+    local manifest =
+        findSteamManifestUpward(currentDirectory)
+
+    if manifest then
+        return manifest
+    end
+
+    -- Keep the script-derived path as a second independent route.
     local win64Dir = getWin64Directory()
-    if not win64Dir then
-        return nil
+
+    manifest = findSteamManifestUpward(win64Dir)
+
+    if manifest then
+        return manifest
     end
 
-    -- Win64 -> Binaries -> Ballest -> game root -> common -> steamapps
-    local binariesDir = parentDirectory(win64Dir)
-    local ballestDir = parentDirectory(binariesDir)
-    local gameRoot = parentDirectory(ballestDir)
-    local commonDir = parentDirectory(gameRoot)
-    local steamappsDir = parentDirectory(commonDir)
-
-    if not steamappsDir then
-        return nil
-    end
-
-    return joinPath(steamappsDir, "appmanifest_3339810.acf")
+    return nil
 end
 
 local function readSteamBuildId()
@@ -248,6 +312,7 @@ local function writeSafetyLock(reason)
             " "
         )
 
+    file:write("format=" .. SAFETY_LOCK_FORMAT .. "\n")
     file:write("version=" .. MOD_VERSION .. "\n")
     file:write("reason=" .. safeReason .. "\n")
     file:close()
@@ -258,21 +323,24 @@ end
 local function readSafetyLock()
     local lockPath = getSafetyLockPath()
     if not lockPath then
-        return nil, nil
+        return nil, nil, nil
     end
 
     local file = io.open(lockPath, "r")
     if not file then
-        return nil, nil
+        return nil, nil, nil
     end
 
+    local format = nil
     local version = nil
     local reason = nil
 
     for line in file:lines() do
         local key, value = string.match(line, "^([^=]+)=(.*)$")
 
-        if key == "version" then
+        if key == "format" then
+            format = value
+        elseif key == "version" then
             version = value
         elseif key == "reason" then
             reason = value
@@ -281,13 +349,16 @@ local function readSafetyLock()
 
     file:close()
 
-    return version, reason
+    return version, reason, format
 end
 
 local function clearOldSafetyLockIfNeeded()
-    local version = readSafetyLock()
+    local version, _, format = readSafetyLock()
 
-    if version and version ~= MOD_VERSION then
+    if version and (
+        version ~= MOD_VERSION
+        or format ~= SAFETY_LOCK_FORMAT
+    ) then
         local lockPath = getSafetyLockPath()
 
         if lockPath then
@@ -339,9 +410,11 @@ end
 local function initializeCompatibilitySafety()
     clearOldSafetyLockIfNeeded()
 
-    local lockedVersion, lockedReason = readSafetyLock()
+    local lockedVersion, lockedReason, lockedFormat =
+        readSafetyLock()
 
-    if lockedVersion == MOD_VERSION then
+    if lockedVersion == MOD_VERSION
+        and lockedFormat == SAFETY_LOCK_FORMAT then
         lockPracticeModeSafety(
             lockedReason or
             "this Practice Mode version previously detected a leaderboard safety failure",
@@ -3069,56 +3142,134 @@ end
 -- SECONDARY HIGH-SCORE BLOCKER
 ---------------------------------------------------------
 
-local secondaryHookOk, secondaryHookError = pcall(function()
-    RegisterHook(
-        "/Game/Core/Gameplay/BP_MyPlayerController.BP_MyPlayerController_C:Try Generate Level High Score",
-        function(
-            Context,
-            OutHighscore,
-            bSuccess
+local secondaryHookRegistered = false
+local secondaryHookRetryScheduled = false
+local secondaryHookAttempts = 0
+
+local function refreshLeaderboardProtectionReady()
+    leaderboardProtectionReady =
+        (not compatibilityLocked)
+        and primaryUploadProtectionReady
+
+    if not leaderboardProtectionReady then
+        practiceFeatureEnabled = false
+    end
+end
+
+local function registerSecondaryScoreProtectionWhenReady()
+    if secondaryHookRegistered then
+        secondaryScoreProtectionReady = true
+        return true
+    end
+
+    secondaryHookAttempts = secondaryHookAttempts + 1
+
+    local hookOk, hookError = pcall(function()
+        RegisterHook(
+            "/Game/Core/Gameplay/BP_MyPlayerController.BP_MyPlayerController_C:Try Generate Level High Score",
+            function(
+                Context,
+                OutHighscore,
+                bSuccess
+            )
+                if not runVoided then
+                    return
+                end
+
+                local ok, errorMessage = pcall(function()
+                    bSuccess:set(false)
+                end)
+
+                if ok then
+                    print(
+                        "[PracticeMode] Secondary protection: bSuccess=false\n"
+                    )
+                else
+                    print(
+                        "[PracticeMode] Secondary protection failed at runtime: " ..
+                        tostring(errorMessage) ..
+                        "\n"
+                    )
+                end
+            end
         )
-            if not runVoided then
-                return
-            end
+    end)
 
-            local ok, errorMessage = pcall(function()
-                bSuccess:set(false)
+    if hookOk then
+        secondaryHookRegistered = true
+        secondaryScoreProtectionReady = true
+        secondaryHookRetryScheduled = false
+
+        print(
+            "[PracticeMode] Secondary high-score blocker registered\n"
+        )
+
+        return true
+    end
+
+    secondaryScoreProtectionReady = false
+
+    -- This Blueprint function is not guaranteed to be loaded when the Lua mod
+    -- first starts. That is not a safety failure by itself; the primary Steam
+    -- upload hook remains the mandatory last line of defense.
+    if secondaryHookAttempts == 1
+        or secondaryHookAttempts % 5 == 0 then
+
+        print(
+            "[PracticeMode] Secondary high-score blocker not loaded yet; " ..
+            "will retry: " ..
+            tostring(hookError) ..
+            "\n"
+        )
+    end
+
+    if not secondaryHookRetryScheduled then
+        secondaryHookRetryScheduled = true
+
+        ExecuteWithDelay(1000, function()
+            secondaryHookRetryScheduled = false
+            ExecuteInGameThread(function()
+                registerSecondaryScoreProtectionWhenReady()
             end)
+        end)
+    end
 
-            if ok then
-                print("[PracticeMode] Secondary protection: bSuccess=false\n")
-            else
-                print(
-                    "[PracticeMode] Secondary protection failed: " ..
-                    tostring(errorMessage) ..
-                    "\n"
-                )
-            end
+    return false
+end
+
+refreshLeaderboardProtectionReady()
+registerSecondaryScoreProtectionWhenReady()
+
+local secondaryControllerWatcherOk,
+    secondaryControllerWatcherError = pcall(function()
+
+    NotifyOnNewObject(
+        "/Game/Core/Gameplay/BP_MyPlayerController.BP_MyPlayerController_C",
+        function(NewObject)
+            ExecuteWithDelay(100, function()
+                ExecuteInGameThread(function()
+                    registerSecondaryScoreProtectionWhenReady()
+                end)
+            end)
         end
     )
 end)
 
-if secondaryHookOk then
-    secondaryScoreProtectionReady = true
-    print("[PracticeMode] Secondary high-score blocker registered\n")
+if secondaryControllerWatcherOk then
+    print(
+        "[PracticeMode] Secondary leaderboard-protection watcher registered\n"
+    )
 else
-    secondaryScoreProtectionReady = false
-
-    lockPracticeModeSafety(
-        "secondary high-score blocker failed to register: " ..
-        tostring(secondaryHookError),
-        true
+    print(
+        "[PracticeMode] Secondary protection watcher unavailable; timer retry remains active: " ..
+        tostring(secondaryControllerWatcherError) ..
+        "\n"
     )
 end
 
-leaderboardProtectionReady =
-    (not compatibilityLocked)
-    and primaryUploadProtectionReady
-    and secondaryScoreProtectionReady
-
 if leaderboardProtectionReady then
     print(
-        "[PracticeMode] Leaderboard safety system READY for Ballest build " ..
+        "[PracticeMode] Mandatory leaderboard safety system READY for Ballest build " ..
         tostring(detectedSteamBuildId) ..
         "\n"
     )
@@ -3708,6 +3859,8 @@ RegisterKeyBind(
         print("[PracticeMode] compatibilityLocked = " .. tostring(compatibilityLocked) .. "\n")
         print("[PracticeMode] Steam build = " .. tostring(detectedSteamBuildId) .. "\n")
         print("[PracticeMode] leaderboardProtectionReady = " .. tostring(leaderboardProtectionReady) .. "\n")
+        print("[PracticeMode] primaryUploadProtectionReady = " .. tostring(primaryUploadProtectionReady) .. "\n")
+        print("[PracticeMode] secondaryScoreProtectionReady = " .. tostring(secondaryScoreProtectionReady) .. "\n")
         print("[PracticeMode] safetyReason = " .. tostring(compatibilityLockReason) .. "\n")
         print("[PracticeMode] attempts = " .. tostring(attempts) .. "\n")
         print("[PracticeMode] indicators = " .. tostring(#practiceIndicators) .. "\n")
