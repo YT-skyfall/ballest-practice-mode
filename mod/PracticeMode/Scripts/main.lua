@@ -15,7 +15,7 @@ local EXIT_ACTION = 2
 -- release explicitly adds support.
 local MOD_VERSION = "1.0.0"
 local SUPPORTED_STEAM_BUILD_IDS = {
-    ["25589694"] = true
+    ["25608493"] = true
 }
 
 ---------------------------------------------------------
