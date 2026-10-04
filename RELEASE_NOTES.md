@@ -7,6 +7,7 @@ Small compatibility and reliability update.
 - Practice Mode now scans for an already-created main-menu widget after startup instead of relying only on the new-object callback.
 - If the menu was already constructed before Practice Mode loaded, it now rebuilds the visible rows once so the **Mods** entry actually appears.
 - Startup recovery retries briefly and rebuilds each concrete main-menu widget at most once.
+- Verified across five consecutive cold launches with the AnythingGoes Plugin Manager installed.
 
 ## Existing features
 - Enter Practice Mode before a track or from the results screen.
