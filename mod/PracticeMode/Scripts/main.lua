@@ -2626,12 +2626,15 @@ end
 
 -- Main-menu construction is timing-sensitive. On some cold launches another
 -- UI host can finish creating Ballest's main menu before this Lua mod has
--- registered NotifyOnNewObject. Track rebuilds per widget (not globally) and
--- also scan for an already-existing live menu after startup.
+-- registered NotifyOnNewObject. Track successful rebuilds per concrete widget,
+-- keep pending rebuilds separate, and actively scan for an already-existing
+-- live main menu for the whole cold-launch window.
 local rebuiltStartupMainMenus = {}
+local pendingStartupMainMenus = {}
+local mainMenuStartupRecoveryComplete = false
 
-local function mainMenuWasRebuilt(menu)
-    for _, existing in ipairs(rebuiltStartupMainMenus) do
+local function tableHasValidMenu(list, menu)
+    for _, existing in ipairs(list) do
         if existing == menu and isValidObject(existing) then
             return true
         end
@@ -2640,17 +2643,46 @@ local function mainMenuWasRebuilt(menu)
     return false
 end
 
-local function markMainMenuRebuilt(menu)
+local function removeMenuFromList(list, menu)
     local kept = {}
 
-    for _, existing in ipairs(rebuiltStartupMainMenus) do
-        if isValidObject(existing) then
+    for _, existing in ipairs(list) do
+        if existing ~= menu and isValidObject(existing) then
             table.insert(kept, existing)
         end
     end
 
-    table.insert(kept, menu)
-    rebuiltStartupMainMenus = kept
+    return kept
+end
+
+local function mainMenuWasRebuilt(menu)
+    return tableHasValidMenu(rebuiltStartupMainMenus, menu)
+end
+
+local function mainMenuRebuildPending(menu)
+    return tableHasValidMenu(pendingStartupMainMenus, menu)
+end
+
+local function markMainMenuPending(menu)
+    pendingStartupMainMenus =
+        removeMenuFromList(pendingStartupMainMenus, menu)
+
+    table.insert(pendingStartupMainMenus, menu)
+end
+
+local function clearMainMenuPending(menu)
+    pendingStartupMainMenus =
+        removeMenuFromList(pendingStartupMainMenus, menu)
+end
+
+local function markMainMenuRebuilt(menu)
+    clearMainMenuPending(menu)
+
+    rebuiltStartupMainMenus =
+        removeMenuFromList(rebuiltStartupMainMenus, menu)
+
+    table.insert(rebuiltStartupMainMenus, menu)
+    mainMenuStartupRecoveryComplete = true
 end
 
 local function rebuildExistingMainMenuOnce(menu, source)
@@ -2671,12 +2703,17 @@ local function rebuildExistingMainMenuOnce(menu, source)
     end
 
     if mainMenuWasRebuilt(menu) then
+        mainMenuStartupRecoveryComplete = true
         return true
     end
 
+    if mainMenuRebuildPending(menu) then
+        return false
+    end
+
     -- A startup scan can find the widget while ActionTypes is still being
-    -- initialized. Do not consume this widget's one rebuild until injection
-    -- actually succeeds; a later retry may then finish the job.
+    -- initialized. Do not consume this widget's rebuild until both injection
+    -- and the actual PreConstruct rebuild have succeeded.
     local addOk, addError = pcall(function()
         local actionTypes = menu.ActionTypes
 
@@ -2702,15 +2739,15 @@ local function rebuildExistingMainMenuOnce(menu, source)
     end
 
     rememberMenu(menu)
-    markMainMenuRebuilt(menu)
+    markMainMenuPending(menu)
 
-    -- If this menu already existed before our object listener was registered,
-    -- its visible rows may have been built without MODS_ACTION. Re-running
-    -- PreConstruct once for this exact widget rebuilds those rows. New menu
-    -- widgets can still receive their own one-time rebuild later.
+    -- Give the live widget a moment to finish its own initialization. Only mark
+    -- it recovered after PreConstruct itself succeeds. If the object goes away
+    -- or PreConstruct fails, later startup scans are allowed to try again.
     ExecuteWithDelay(250, function()
         ExecuteInGameThread(function()
             if not isValidObject(menu) then
+                clearMainMenuPending(menu)
                 return
             end
 
@@ -2719,6 +2756,8 @@ local function rebuildExistingMainMenuOnce(menu, source)
             end)
 
             if ok then
+                markMainMenuRebuilt(menu)
+
                 print(
                     "[PracticeMode] MAIN MENU startup rebuild requested via PreConstruct" ..
                     (source and (" (" .. tostring(source) .. ")") or "") ..
@@ -2733,6 +2772,8 @@ local function rebuildExistingMainMenuOnce(menu, source)
                     end)
                 end)
             else
+                clearMainMenuPending(menu)
+
                 print(
                     "[PracticeMode] MAIN MENU startup rebuild failed: " ..
                     tostring(errorMessage) ..
@@ -2742,19 +2783,48 @@ local function rebuildExistingMainMenuOnce(menu, source)
         end)
     end)
 
-    return true
+    return false
 end
 
 local function scanForExistingMainMenu(attempt)
-    local findOk, menus = pcall(function()
+    if mainMenuStartupRecoveryComplete then
+        return true
+    end
+
+    local menus = nil
+
+    local findAllOk, allMenus = pcall(function()
         return FindAllOf("WBP_MenuTextGroup_C")
     end)
 
-    if not findOk or not menus then
-        return false
+    if findAllOk and allMenus then
+        menus = allMenus
+    else
+        menus = {}
     end
 
-    local recovered = false
+    -- FindFirstOf is an independent fallback for UE4SS startup states where
+    -- FindAllOf has not produced a usable list yet.
+    local firstOk, firstMenu = pcall(function()
+        return FindFirstOf("WBP_MenuTextGroup_C")
+    end)
+
+    if firstOk and isValidObject(firstMenu) then
+        local alreadyIncluded = false
+
+        for _, menu in ipairs(menus) do
+            if menu == firstMenu then
+                alreadyIncluded = true
+                break
+            end
+        end
+
+        if not alreadyIncluded then
+            table.insert(menus, firstMenu)
+        end
+    end
+
+    local candidateCount = 0
 
     for _, menu in ipairs(menus) do
         if isValidObject(menu) then
@@ -2767,69 +2837,90 @@ local function scanForExistingMainMenu(attempt)
                 and string.find(fullName, "/Engine/Transient", 1, true)
                 and getMenuType(fullName) == "MAIN MENU" then
 
-                if not mainMenuWasRebuilt(menu) then
+                candidateCount = candidateCount + 1
+
+                if mainMenuWasRebuilt(menu) then
+                    mainMenuStartupRecoveryComplete = true
+                    updateMenuLabel(menu)
+                    return true
+                end
+
+                if not mainMenuRebuildPending(menu) then
                     print(
                         "[PracticeMode] Startup scan found existing MAIN MENU (attempt " ..
                         tostring(attempt) ..
                         ")\n"
                     )
 
-                    if rebuildExistingMainMenuOnce(
+                    rebuildExistingMainMenuOnce(
                         menu,
                         "startup scan " .. tostring(attempt)
-                    ) then
-                        recovered = true
-                    end
-                else
-                    -- Keep the label synchronized without rebuilding this
-                    -- concrete widget more than once.
-                    updateMenuLabel(menu)
-                    recovered = true
+                    )
                 end
             end
         end
     end
 
-    return recovered
-end
+    -- Diagnostic breadcrumb without flooding the log.
+    if attempt == 1
+        or attempt == 5
+        or attempt == 10
+        or attempt == 20
+        or attempt == 40
+        or attempt == 60 then
 
-local function runMainMenuStartupRecovery(attempt, attemptsLeft)
-    ExecuteInGameThread(function()
-        if scanForExistingMainMenu(attempt) then
-            print(
-                "[PracticeMode] MAIN MENU startup recovery complete on attempt " ..
-                tostring(attempt) ..
-                "\n"
-            )
-            return
-        end
+        local managerPresent = false
 
-        if attemptsLeft <= 0 then
-            print(
-                "[PracticeMode] MAIN MENU startup recovery timed out after " ..
-                tostring(attempt) ..
-                " attempts; new-object listener remains active\n"
-            )
-            return
-        end
-
-        -- Ballest's initial main menu can appear several seconds after UE4SS
-        -- finishes loading mods. Keep watching long enough to cover that cold
-        -- launch window instead of stopping after the first 3 seconds.
-        ExecuteWithDelay(500, function()
-            runMainMenuStartupRecovery(
-                attempt + 1,
-                attemptsLeft - 1
-            )
+        pcall(function()
+            local managers = FindAllOf("WBP_MainMenu_UIManager_C")
+            if managers then
+                for _, manager in ipairs(managers) do
+                    if isValidObject(manager) then
+                        local path = getObjectPath(manager)
+                        if path and string.find(path, "/Engine/Transient", 1, true) then
+                            managerPresent = true
+                            break
+                        end
+                    end
+                end
+            end
         end)
-    end)
+
+        print(
+            "[PracticeMode] MAIN MENU recovery scan " ..
+            tostring(attempt) ..
+            ": candidates=" ..
+            tostring(candidateCount) ..
+            " managerPresent=" ..
+            tostring(managerPresent) ..
+            "\n"
+        )
+    end
+
+    return false
 end
 
 local function startMainMenuStartupRecovery()
-    -- 40 half-second retries = about 20 seconds after mod initialization.
-    -- This only runs during startup and stops immediately once the live menu
-    -- has been recovered.
-    runMainMenuStartupRecovery(1, 40)
+    -- Use absolute delayed checks rather than a recursive timer chain. This is
+    -- more robust during UE4SS/game-thread startup and covers the entire period
+    -- in which Ballest may finish creating its first main menu.
+    local delays = {
+        0, 250, 500, 750,
+        1000, 1500, 2000, 2500, 3000,
+        4000, 5000, 6000, 7000, 8000,
+        10000, 12000, 15000, 18000,
+        22000, 26000, 30000
+    }
+
+    for attempt, delayMs in ipairs(delays) do
+        ExecuteWithDelay(delayMs, function()
+            ExecuteInGameThread(function()
+                if not mainMenuStartupRecoveryComplete then
+                    scanForExistingMainMenu(attempt)
+                end
+            end)
+        end)
+    end
 end
 
 local notifyOk, notifyError = pcall(function()
