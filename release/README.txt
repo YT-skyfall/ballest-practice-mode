@@ -1,4 +1,4 @@
-Ballest Practice Mode v1.0.0
+Ballest Practice Mode v1.0.1
 
 Recommended:
 Download Ballest-PracticeMode-Installer.exe. It installs UE4SS automatically
