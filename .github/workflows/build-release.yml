@@ -65,7 +65,7 @@ jobs:
             --notes-file ".\RELEASE_NOTES.md"
 
       - name: Update v1.0.1 Release
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'Publish v1.0.1')
+        if: github.event_name == 'workflow_dispatch'
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
