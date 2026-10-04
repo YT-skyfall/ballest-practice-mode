@@ -1,5 +1,5 @@
-; Shared UE4SS window-setting helpers.
-; Included from PracticeMode.iss and PracticeMode-Uninstaller.iss inside [Code].
+// Shared UE4SS window-setting helpers.
+// Included from PracticeMode.iss and PracticeMode-Uninstaller.iss inside [Code].
 
 const
   QuietSettingsBackupName = 'ue4ss-window-settings.backup.ini';
