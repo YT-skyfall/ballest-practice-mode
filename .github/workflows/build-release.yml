@@ -72,8 +72,7 @@ jobs:
         run: |
           $tag = "v1.0.1"
 
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -ne 0) {
+          if ("${{ github.event_name }}" -eq "push") {
             gh release create $tag `
               ".\installer\output\Ballest-PracticeMode-Installer.exe" `
               ".\installer\output\Ballest-PracticeMode-Uninstaller.exe" `
