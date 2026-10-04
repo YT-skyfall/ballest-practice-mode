@@ -12,7 +12,7 @@ It installs UE4SS automatically when needed.
 
 A manual ZIP is also published for users who already manage UE4SS themselves.
 
-## v1.0.0 features
+## v1.0.1 features
 
 - Pre-track and post-track Practice Mode entry
 - Set / replace practice start
