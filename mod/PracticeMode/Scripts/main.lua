@@ -2756,26 +2756,51 @@ local function rebuildExistingMainMenuOnce(menu, source)
             end)
 
             if ok then
-                markMainMenuRebuilt(menu)
-
                 print(
-                    "[PracticeMode] MAIN MENU startup rebuild requested via PreConstruct" ..
+                    "[PracticeMode] MAIN MENU startup PreConstruct completed" ..
                     (source and (" (" .. tostring(source) .. ")") or "") ..
                     "\n"
                 )
 
-                ExecuteWithDelay(100, function()
-                    ExecuteInGameThread(function()
-                        if isValidObject(menu) then
-                            updateMenuLabel(menu)
-                        end
-                    end)
+                -- v1.0.1 TEST BUILD:
+                -- PreConstruct updates the backing ActionTypes map but, on the
+                -- failing cold-launch case, it does not recreate the already
+                -- constructed visible rows. Invoke the widget's Construct event
+                -- once to test whether Ballest rebuilds those rows safely.
+                local constructOk, constructError = pcall(function()
+                    menu:Construct()
                 end)
+
+                if constructOk then
+                    markMainMenuRebuilt(menu)
+
+                    print(
+                        "[PracticeMode] MAIN MENU TEST Construct() succeeded" ..
+                        (source and (" (" .. tostring(source) .. ")") or "") ..
+                        "\n"
+                    )
+
+                    ExecuteWithDelay(100, function()
+                        ExecuteInGameThread(function()
+                            if isValidObject(menu) then
+                                updateMenuLabel(menu)
+                            end
+                        end)
+                    end)
+                else
+                    clearMainMenuPending(menu)
+
+                    print(
+                        "[PracticeMode] MAIN MENU TEST Construct() failed: " ..
+                        tostring(constructError) ..
+                        "\n"
+                    )
+                end
             else
                 clearMainMenuPending(menu)
 
                 print(
-                    "[PracticeMode] MAIN MENU startup rebuild failed: " ..
+                    "[PracticeMode] MAIN MENU startup PreConstruct failed: " ..
                     tostring(errorMessage) ..
                     "\n"
                 )
