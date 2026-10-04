@@ -1,0 +1,10 @@
+[meta]
+name = "Practice Mode"
+version = "0.1.0"
+author = "YT-skyfall"
+description = "Set one practice point anywhere on a track and repeatedly restart from it without submitting a leaderboard time."
+min_host = "0.12.0"
+
+[script]
+files = ["main.as"]
+timeout = 20
