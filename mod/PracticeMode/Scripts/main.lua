@@ -9,6 +9,15 @@ local PRACTICE_ACTION = 250
 local SET_POINT_ACTION = 251
 local EXIT_ACTION = 2
 
+-- Safety/compatibility contract.
+-- Practice Mode v1.0.0 was tested against this exact public Steam build.
+-- Any unrecognized Ballest build is treated as unsafe until a new mod
+-- release explicitly adds support.
+local MOD_VERSION = "1.0.0"
+local SUPPORTED_STEAM_BUILD_IDS = {
+    ["25608493"] = true
+}
+
 ---------------------------------------------------------
 -- STATE
 ---------------------------------------------------------
@@ -24,6 +33,15 @@ local bestSectionTime = nil
 -- This does NOT mark a run as practice by itself; it only enables/disables
 -- access to Practice Mode features.
 local practiceFeatureEnabled = true
+
+-- Fail-closed leaderboard safety state. If compatibility cannot be verified,
+-- or either leaderboard protection hook fails, Practice Mode stays disabled.
+local compatibilityLocked = false
+local compatibilityLockReason = nil
+local detectedSteamBuildId = nil
+local primaryUploadProtectionReady = false
+local secondaryScoreProtectionReady = false
+local leaderboardProtectionReady = false
 
 local practiceActive = false
 local placementMode = false
@@ -79,6 +97,293 @@ local trackedMenus = {}
 local practiceIndicators = {}
 
 print("[PracticeMode] Loaded successfully\n")
+
+---------------------------------------------------------
+-- FAIL-CLOSED COMPATIBILITY / LEADERBOARD SAFETY
+---------------------------------------------------------
+
+local function parentDirectory(path)
+    if not path then
+        return nil
+    end
+
+    return string.match(path, "^(.*)[/\\][^/\\]+$")
+end
+
+local function joinPath(base, child)
+    if not base or base == "" then
+        return child
+    end
+
+    local last = string.sub(base, -1)
+    if last == "\\" or last == "/" then
+        return base .. child
+    end
+
+    return base .. "\\" .. child
+end
+
+local function getPracticeModDirectory()
+    local ok, info = pcall(function()
+        return debug.getinfo(1, "S")
+    end)
+
+    if not ok or not info or not info.source then
+        return nil
+    end
+
+    local source = tostring(info.source)
+
+    if string.sub(source, 1, 1) == "@" then
+        source = string.sub(source, 2)
+    end
+
+    source = string.gsub(source, "/", "\\")
+
+    local scriptsDir = parentDirectory(source)
+    if not scriptsDir then
+        return nil
+    end
+
+    return parentDirectory(scriptsDir)
+end
+
+local function getWin64Directory()
+    local modDir = getPracticeModDirectory()
+    if not modDir then
+        return nil
+    end
+
+    -- PracticeMode -> Mods -> ue4ss -> Win64
+    local modsDir = parentDirectory(modDir)
+    local ue4ssDir = parentDirectory(modsDir)
+    return parentDirectory(ue4ssDir)
+end
+
+local function getSteamManifestPath()
+    local win64Dir = getWin64Directory()
+    if not win64Dir then
+        return nil
+    end
+
+    -- Win64 -> Binaries -> Ballest -> game root -> common -> steamapps
+    local binariesDir = parentDirectory(win64Dir)
+    local ballestDir = parentDirectory(binariesDir)
+    local gameRoot = parentDirectory(ballestDir)
+    local commonDir = parentDirectory(gameRoot)
+    local steamappsDir = parentDirectory(commonDir)
+
+    if not steamappsDir then
+        return nil
+    end
+
+    return joinPath(steamappsDir, "appmanifest_3339810.acf")
+end
+
+local function readSteamBuildId()
+    local manifestPath = getSteamManifestPath()
+
+    if not manifestPath then
+        return nil, "could not resolve the Steam appmanifest path"
+    end
+
+    local file, openError = io.open(manifestPath, "r")
+
+    if not file then
+        return nil,
+            "could not open " ..
+            tostring(manifestPath) ..
+            ": " ..
+            tostring(openError)
+    end
+
+    local buildId = nil
+
+    for line in file:lines() do
+        local parsed =
+            string.match(
+                line,
+                '"%s*buildid%s*"%s*"(%d+)"'
+            )
+
+        if parsed then
+            buildId = parsed
+            break
+        end
+    end
+
+    file:close()
+
+    if not buildId then
+        return nil, "Steam buildid was not found in appmanifest_3339810.acf"
+    end
+
+    return buildId, nil
+end
+
+local function getSafetyLockPath()
+    local modDir = getPracticeModDirectory()
+    if not modDir then
+        return nil
+    end
+
+    return joinPath(modDir, "compatibility.lock")
+end
+
+local function writeSafetyLock(reason)
+    local lockPath = getSafetyLockPath()
+    if not lockPath then
+        return false
+    end
+
+    local file = io.open(lockPath, "w")
+    if not file then
+        return false
+    end
+
+    local safeReason =
+        string.gsub(
+            tostring(reason or "unknown leaderboard safety failure"),
+            "[\r\n]+",
+            " "
+        )
+
+    file:write("version=" .. MOD_VERSION .. "\n")
+    file:write("reason=" .. safeReason .. "\n")
+    file:close()
+
+    return true
+end
+
+local function readSafetyLock()
+    local lockPath = getSafetyLockPath()
+    if not lockPath then
+        return nil, nil
+    end
+
+    local file = io.open(lockPath, "r")
+    if not file then
+        return nil, nil
+    end
+
+    local version = nil
+    local reason = nil
+
+    for line in file:lines() do
+        local key, value = string.match(line, "^([^=]+)=(.*)$")
+
+        if key == "version" then
+            version = value
+        elseif key == "reason" then
+            reason = value
+        end
+    end
+
+    file:close()
+
+    return version, reason
+end
+
+local function clearOldSafetyLockIfNeeded()
+    local version = readSafetyLock()
+
+    if version and version ~= MOD_VERSION then
+        local lockPath = getSafetyLockPath()
+
+        if lockPath then
+            pcall(function()
+                os.remove(lockPath)
+            end)
+        end
+    end
+end
+
+local function lockPracticeModeSafety(reason, persist)
+    compatibilityLocked = true
+    compatibilityLockReason =
+        tostring(reason or "leaderboard protection could not be verified")
+
+    practiceFeatureEnabled = false
+
+    -- If a practice run was already in progress, never un-void it. Keep every
+    -- remaining protection active for the rest of this game session.
+    if practiceActive or runVoided then
+        runVoided = true
+    end
+
+    practiceActive = false
+    placementMode = false
+    savedLocation = nil
+    savedRotation = nil
+    practiceClickLocked = false
+
+    if persist then
+        writeSafetyLock(compatibilityLockReason)
+    end
+
+    print("\n")
+    print("[PracticeMode] ===== SAFETY LOCK =====\n")
+    print("[PracticeMode] Practice Mode has been disabled.\n")
+    print(
+        "[PracticeMode] Reason: " ..
+        tostring(compatibilityLockReason) ..
+        "\n"
+    )
+    print(
+        "[PracticeMode] Download a fixed Practice Mode release before using it again.\n"
+    )
+    print("[PracticeMode] =======================\n")
+    print("\n")
+end
+
+local function initializeCompatibilitySafety()
+    clearOldSafetyLockIfNeeded()
+
+    local lockedVersion, lockedReason = readSafetyLock()
+
+    if lockedVersion == MOD_VERSION then
+        lockPracticeModeSafety(
+            lockedReason or
+            "this Practice Mode version previously detected a leaderboard safety failure",
+            false
+        )
+        return false
+    end
+
+    local buildId, buildError = readSteamBuildId()
+    detectedSteamBuildId = buildId
+
+    if not buildId then
+        lockPracticeModeSafety(
+            "Ballest build could not be verified: " ..
+            tostring(buildError),
+            false
+        )
+        return false
+    end
+
+    if not SUPPORTED_STEAM_BUILD_IDS[buildId] then
+        lockPracticeModeSafety(
+            "unsupported Ballest Steam build " ..
+            tostring(buildId) ..
+            " (Practice Mode " ..
+            MOD_VERSION ..
+            " requires a compatibility update)",
+            false
+        )
+        return false
+    end
+
+    print(
+        "[PracticeMode] Safety check passed for Ballest Steam build " ..
+        tostring(buildId) ..
+        "\n"
+    )
+
+    return true
+end
+
+initializeCompatibilitySafety()
 
 ---------------------------------------------------------
 -- BASIC HELPERS
@@ -723,6 +1028,10 @@ local function setIndicatorVisible(indicator, visible)
 end
 
 local function getPracticeIndicatorText()
+    if compatibilityLocked then
+        return "PRACTICE MODE DISABLED\nUPDATE REQUIRED\nLEADERBOARDS PROTECTED"
+    end
+
     if practiceActive and (
         placementMode
         or not savedLocation
@@ -991,6 +1300,10 @@ end
 ---------------------------------------------------------
 
 local function getModsLabel()
+    if compatibilityLocked then
+        return "mods: practice update required"
+    end
+
     -- Keep the main-menu entry named simply "mods" when enabled.
     -- While we are still building the real Mods page, the temporary disabled
     -- state is shown directly in the label so the toggle is visible.
@@ -1002,6 +1315,10 @@ local function getModsLabel()
 end
 
 local function getPracticeLabel(menuType)
+    if compatibilityLocked then
+        return "practice mode (update required)"
+    end
+
     -- Keep the primary practice button present even when the feature is
     -- disabled. The dedicated set-point row below is only added to pause menus.
     if not practiceFeatureEnabled then
@@ -1028,6 +1345,10 @@ local function getPracticeLabel(menuType)
 end
 
 local function getSetPointLabel()
+    if compatibilityLocked then
+        return "set practice start (update required)"
+    end
+
     if not practiceFeatureEnabled then
         return "set practice start (disabled)"
     end
@@ -1224,6 +1545,23 @@ end
 ---------------------------------------------------------
 
 local function activatePracticeMode()
+    if compatibilityLocked then
+        print(
+            "[PracticeMode] Practice Mode is safety-locked; update required\n"
+        )
+        return false
+    end
+
+    if not leaderboardProtectionReady then
+        lockPracticeModeSafety(
+            "leaderboard protection did not initialize completely",
+            true
+        )
+        syncAllMenus()
+        syncPracticeIndicators()
+        return false
+    end
+
     if not practiceFeatureEnabled then
         print("[PracticeMode] Practice Mode is disabled in Mods\n")
         return false
@@ -2359,6 +2697,16 @@ local customEventOk, customEventError = pcall(function()
             if action == MODS_ACTION
                 and menuType == "MAIN MENU" then
 
+                if compatibilityLocked then
+                    practiceFeatureEnabled = false
+                    syncAllMenus()
+
+                    print(
+                        "[PracticeMode] Practice Mode is locked until a compatible update is installed\n"
+                    )
+                    return
+                end
+
                 practiceFeatureEnabled =
                     not practiceFeatureEnabled
 
@@ -2667,6 +3015,17 @@ local uploadHookOk, uploadHookError = pcall(function()
                 tostring(finalHandle) ..
                 "\n"
             )
+
+            if (not blocked) or finalHandle ~= 0 then
+                lockPracticeModeSafety(
+                    "leaderboard upload protection failed during a voided Practice Mode run",
+                    true
+                )
+
+                syncAllMenus()
+                syncPracticeIndicators()
+            end
+
             print("[PracticeMode] ================================\n")
             print("\n")
         end,
@@ -2688,8 +3047,17 @@ local uploadHookOk, uploadHookError = pcall(function()
 end)
 
 if uploadHookOk then
+    primaryUploadProtectionReady = true
     print("[PracticeMode] Native Steam upload blocker registered\n")
 else
+    primaryUploadProtectionReady = false
+
+    lockPracticeModeSafety(
+        "native Steam leaderboard upload blocker failed to register: " ..
+        tostring(uploadHookError),
+        true
+    )
+
     print(
         "[PracticeMode] ERROR registering Steam blocker: " ..
         tostring(uploadHookError) ..
@@ -2701,7 +3069,7 @@ end
 -- SECONDARY HIGH-SCORE BLOCKER
 ---------------------------------------------------------
 
-pcall(function()
+local secondaryHookOk, secondaryHookError = pcall(function()
     RegisterHook(
         "/Game/Core/Gameplay/BP_MyPlayerController.BP_MyPlayerController_C:Try Generate Level High Score",
         function(
@@ -2730,6 +3098,33 @@ pcall(function()
     )
 end)
 
+if secondaryHookOk then
+    secondaryScoreProtectionReady = true
+    print("[PracticeMode] Secondary high-score blocker registered\n")
+else
+    secondaryScoreProtectionReady = false
+
+    lockPracticeModeSafety(
+        "secondary high-score blocker failed to register: " ..
+        tostring(secondaryHookError),
+        true
+    )
+end
+
+leaderboardProtectionReady =
+    (not compatibilityLocked)
+    and primaryUploadProtectionReady
+    and secondaryScoreProtectionReady
+
+if leaderboardProtectionReady then
+    print(
+        "[PracticeMode] Leaderboard safety system READY for Ballest build " ..
+        tostring(detectedSteamBuildId) ..
+        "\n"
+    )
+else
+    practiceFeatureEnabled = false
+end
 
 
 
@@ -3310,6 +3705,10 @@ RegisterKeyBind(
         print("[PracticeMode] active = " .. tostring(practiceActive) .. "\n")
         print("[PracticeMode] placementMode = " .. tostring(placementMode) .. "\n")
         print("[PracticeMode] runVoided = " .. tostring(runVoided) .. "\n")
+        print("[PracticeMode] compatibilityLocked = " .. tostring(compatibilityLocked) .. "\n")
+        print("[PracticeMode] Steam build = " .. tostring(detectedSteamBuildId) .. "\n")
+        print("[PracticeMode] leaderboardProtectionReady = " .. tostring(leaderboardProtectionReady) .. "\n")
+        print("[PracticeMode] safetyReason = " .. tostring(compatibilityLockReason) .. "\n")
         print("[PracticeMode] attempts = " .. tostring(attempts) .. "\n")
         print("[PracticeMode] indicators = " .. tostring(#practiceIndicators) .. "\n")
         print("[PracticeMode] ==================\n")
