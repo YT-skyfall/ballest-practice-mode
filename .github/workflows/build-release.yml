@@ -65,7 +65,7 @@ jobs:
             --notes-file ".\RELEASE_NOTES.md"
 
       - name: Update v1.0.1 Release
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'Publish v1.0.1')
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
@@ -74,16 +74,22 @@ jobs:
 
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "$tag is not public yet; workflow_dispatch is build-only until the release exists."
-            exit 0
+            gh release create $tag `
+              ".\installer\output\Ballest-PracticeMode-Installer.exe" `
+              ".\installer\output\Ballest-PracticeMode-Uninstaller.exe" `
+              ".\release\Ballest-PracticeMode-v1.0.1.zip" `
+              --target main `
+              --title "Ballest Practice Mode $tag" `
+              --notes-file ".\RELEASE_NOTES.md"
           }
+          else {
+            gh release upload $tag `
+              ".\installer\output\Ballest-PracticeMode-Installer.exe" `
+              ".\installer\output\Ballest-PracticeMode-Uninstaller.exe" `
+              ".\release\Ballest-PracticeMode-v1.0.1.zip" `
+              --clobber
 
-          gh release upload $tag `
-            ".\installer\output\Ballest-PracticeMode-Installer.exe" `
-            ".\installer\output\Ballest-PracticeMode-Uninstaller.exe" `
-            ".\release\Ballest-PracticeMode-v1.0.1.zip" `
-            --clobber
-
-          gh release edit $tag `
-            --title "Ballest Practice Mode $tag" `
-            --notes-file ".\RELEASE_NOTES.md"
+            gh release edit $tag `
+              --title "Ballest Practice Mode $tag" `
+              --notes-file ".\RELEASE_NOTES.md"
+          }
