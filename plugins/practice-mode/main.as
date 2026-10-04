@@ -20,6 +20,15 @@ UI::Window@ hudWindow;
 UI::Text@ hudTitle;
 UI::Text@ hudAttempts;
 
+const string GAME_TIMER = "PlayerUI/TimeGroup";
+const float TIMER_WIDTH = 520;
+
+UI::Window@ timerWindow;
+UI::Text@ timerText;
+double practiceTime = 0;
+bool practiceTimerRunning = false;
+bool gameTimerHidden = false;
+
 string savedState = "";
 string currentTrack = "";
 string statusMessage = "enter a track to begin";
@@ -60,6 +69,20 @@ void Main()
     @hudAttempts = hudWindow.AddText("attempts: 0", 14);
     hudWindow.visible = false;
 
+    // The Plugin Manager intentionally freezes Ballest's real race timer at
+    // 999:999.999 in practice mode. Hide only that visual element and draw a
+    // practice timer in the same top-centre area. All leaderboard/finish
+    // protection still comes from Race::StartPractice / Race::LoadBall.
+    @timerWindow = UI::CreateWindow();
+    timerWindow.SetAnchor(0.5f, 0);
+    timerWindow.SetPivot(0.5f, 0);
+    timerWindow.SetOffset(0, 26);
+    timerWindow.SetBackground(0, 0, 0, 0);
+    @timerText = timerWindow.AddText("00:00.000", 23);
+    timerText.SetWidth(TIMER_WIDTH);
+    timerText.SetAlign(1);
+    timerWindow.visible = false;
+
     seenRestarts = Race::Restarts();
     seenRespawns = Race::Respawns();
     seenFalls = Race::Falls();
@@ -68,6 +91,15 @@ void Main()
     RefreshPanel();
 
     Log::Info("Practice Mode 0.1.0 loaded");
+}
+
+void OnDisabled()
+{
+    if (gameTimerHidden)
+    {
+        Hud::ClearLayout(GAME_TIMER);
+        gameTimerHidden = false;
+    }
 }
 
 void OnSettingsChanged()
@@ -89,6 +121,7 @@ void Update(float dt)
     WatchFullRestartKey();
     WatchGameRestarts();
     ProcessPendingAction();
+    UpdatePracticeTimer(dt);
     RefreshHud();
 
     if (controlPanel.visible && Host::Time() >= nextPanelRefresh)
@@ -119,6 +152,8 @@ void TrackChanged()
     savedState = "";
     practiceEnabled = false;
     attempts = 0;
+    practiceTime = 0;
+    practiceTimerRunning = false;
     CancelPending();
     statusMessage = "new track: set a practice point";
     RefreshPanel();
@@ -165,6 +200,8 @@ void SetPracticePoint()
     savedState = state;
     practiceEnabled = true;
     attempts = 0;
+    practiceTime = 0;
+    practiceTimerRunning = true;
     CancelPending();
 
     setPointButton.label = "replace practice point";
@@ -192,6 +229,8 @@ void RestartPractice()
     {
         practiceEnabled = true;
         attempts++;
+        practiceTime = 0;
+        practiceTimerRunning = true;
         statusMessage = "restarted from practice point";
     }
     else
@@ -207,6 +246,8 @@ void ClearPracticePoint()
     savedState = "";
     practiceEnabled = false;
     attempts = 0;
+    practiceTime = 0;
+    practiceTimerRunning = false;
     CancelPending();
 
     setPointButton.label = "set practice point";
@@ -292,6 +333,8 @@ void WatchGameRestarts()
 
 void SchedulePracticeLoad(int addedAttempts)
 {
+    practiceTime = 0;
+    practiceTimerRunning = false;
     pendingLoad = true;
     pendingStartOnly = false;
     pendingTryAt = Host::Time() + 0.08;
@@ -301,6 +344,8 @@ void SchedulePracticeLoad(int addedAttempts)
 
 void SchedulePracticeStart()
 {
+    practiceTime = 0;
+    practiceTimerRunning = false;
     pendingLoad = true;
     pendingStartOnly = true;
     pendingTryAt = Host::Time() + 0.08;
@@ -333,6 +378,8 @@ void ProcessPendingAction()
 
         if (Race::IsPractice())
         {
+            practiceTime = 0;
+            practiceTimerRunning = true;
             statusMessage = "practice active from original start";
             CancelPending();
             RefreshPanel();
@@ -341,6 +388,8 @@ void ProcessPendingAction()
     }
     else if (savedState != "" && Race::LoadBall(savedState, true))
     {
+        practiceTime = 0;
+        practiceTimerRunning = true;
         statusMessage = "practice point restored";
         CancelPending();
         RefreshPanel();
@@ -356,6 +405,52 @@ void CancelPending()
     pendingStartOnly = false;
     pendingTryAt = 0;
     pendingExpireAt = 0;
+}
+
+void UpdatePracticeTimer(float dt)
+{
+    bool show = Race::OnTrack() && (practiceEnabled || Race::IsPractice());
+
+    if (practiceTimerRunning && Race::IsActive() && !Race::IsPaused())
+        practiceTime += dt;
+
+    if (show)
+    {
+        if (!gameTimerHidden)
+        {
+            Hud::SetLayout(GAME_TIMER, 0, 0, 1, Hud::Off);
+            gameTimerHidden = true;
+        }
+
+        timerWindow.visible = true;
+        timerText.text = FormatTime(practiceTime);
+    }
+    else
+    {
+        timerWindow.visible = false;
+
+        if (gameTimerHidden)
+        {
+            Hud::ClearLayout(GAME_TIMER);
+            gameTimerHidden = false;
+        }
+    }
+}
+
+string FormatTime(double t)
+{
+    if (t < 0)
+        t = 0;
+
+    int totalMs = int(t * 1000);
+    int minutes = totalMs / 60000;
+    int seconds = (totalMs / 1000) % 60;
+    int millis = totalMs % 1000;
+
+    return (minutes < 10 ? "0" : "") + minutes + ":" +
+           (seconds < 10 ? "0" : "") + seconds + "." +
+           (millis < 100 ? "0" : "") +
+           (millis < 10 ? "0" : "") + millis;
 }
 
 void RefreshHud()
@@ -383,6 +478,8 @@ void RefreshPanel()
     {
         controlPanel.AddLine(savedState == "" ? "practice point: not set" : "practice point: set");
         controlPanel.AddLine("attempts: " + attempts);
+        if (practiceEnabled || Race::IsPractice())
+            controlPanel.AddLine("practice timer: " + FormatTime(practiceTime));
         controlPanel.AddLine("leaderboard protection: " + (Race::IsPractice() ? "active" : (practiceEnabled ? "ready" : "normal run")));
         controlPanel.AddLine("full restart key: " + FullRestartKey);
     }
