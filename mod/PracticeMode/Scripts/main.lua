@@ -2624,6 +2624,66 @@ end
 -- MENU INJECTION / LABEL SYNC FALLBACK
 ---------------------------------------------------------
 
+local mainMenuStartupRebuildAttempted = false
+
+local function rebuildExistingMainMenuOnce(menu)
+    if mainMenuStartupRebuildAttempted then
+        return
+    end
+
+    if not isValidObject(menu) then
+        return
+    end
+
+    local fullName = ""
+    local nameOk = pcall(function()
+        fullName = menu:GetFullName()
+    end)
+
+    if not nameOk or getMenuType(fullName) ~= "MAIN MENU" then
+        return
+    end
+
+    mainMenuStartupRebuildAttempted = true
+
+    -- On the first game launch the live main-menu widget can already have
+    -- built its visible rows by the time UE4SS finishes loading this mod.
+    -- ActionTypes can still be updated, but RefreshMenuLabels only updates
+    -- rows that already exist. Re-run the widget's PreConstruct once so
+    -- Ballest rebuilds the visible menu from the now-patched ActionTypes map.
+    ExecuteWithDelay(500, function()
+        ExecuteInGameThread(function()
+            if not isValidObject(menu) then
+                return
+            end
+
+            local ok, errorMessage = pcall(function()
+                menu:PreConstruct(false)
+            end)
+
+            if ok then
+                print(
+                    "[PracticeMode] MAIN MENU startup rebuild requested via PreConstruct\n"
+                )
+
+                ExecuteWithDelay(100, function()
+                    ExecuteInGameThread(function()
+                        if isValidObject(menu) then
+                            updateMenuLabel(menu)
+                        end
+                    end)
+                end)
+            else
+                print(
+                    "[PracticeMode] MAIN MENU startup rebuild failed: " ..
+                    tostring(errorMessage) ..
+                    "\n"
+                )
+            end
+        end)
+    end)
+end
+
 local notifyOk, notifyError = pcall(function()
     NotifyOnNewObject(
         "/Game/UI/Base/WBP_MenuTextGroup.WBP_MenuTextGroup_C",
@@ -2698,6 +2758,10 @@ local notifyOk, notifyError = pcall(function()
                 tostring(menuType) ..
                 " menu\n"
             )
+
+            if menuType == "MAIN MENU" then
+                rebuildExistingMainMenuOnce(menu)
+            end
 
             ExecuteWithDelay(300, function()
                 ExecuteInGameThread(function()
