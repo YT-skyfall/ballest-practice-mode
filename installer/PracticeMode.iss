@@ -14,6 +14,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={code:GetDefaultInstallDir}
+DirExistsWarning=no
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
 OutputDir=output
