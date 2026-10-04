@@ -2901,25 +2901,56 @@ local function scanForExistingMainMenu(attempt)
 end
 
 local function startMainMenuStartupRecovery()
-    -- Use absolute delayed checks rather than a recursive timer chain. This is
-    -- more robust during UE4SS/game-thread startup and covers the entire period
-    -- in which Ballest may finish creating its first main menu.
-    local delays = {
-        0, 250, 500, 750,
-        1000, 1500, 2000, 2500, 3000,
-        4000, 5000, 6000, 7000, 8000,
-        10000, 12000, 15000, 18000,
-        22000, 26000, 30000
-    }
+    -- ExecuteWithDelay calls registered during UE4SS startup can all become
+    -- due before Ballest's event loop is fully running, causing the intended
+    -- staggered scans to fire almost at once. Use LoopAsync instead: it sleeps
+    -- on its own async loop, then hands each scan back to the game thread.
+    local attempt = 0
 
-    for attempt, delayMs in ipairs(delays) do
-        ExecuteWithDelay(delayMs, function()
+    local loopOk, loopError = pcall(function()
+        LoopAsync(500, function()
+            attempt = attempt + 1
+
+            if mainMenuStartupRecoveryComplete then
+                return true
+            end
+
+            if attempt > 60 then
+                print(
+                    "[PracticeMode] MAIN MENU async recovery timed out after 30 seconds; " ..
+                    "new-object listener remains active\n"
+                )
+                return true
+            end
+
             ExecuteInGameThread(function()
                 if not mainMenuStartupRecoveryComplete then
                     scanForExistingMainMenu(attempt)
                 end
             end)
+
+            return false
         end)
+    end)
+
+    if not loopOk then
+        print(
+            "[PracticeMode] MAIN MENU async recovery loop failed to start: " ..
+            tostring(loopError) ..
+            "\n"
+        )
+
+        -- Keep one ordinary fallback scan. The new-object listener remains the
+        -- primary fallback if this UE4SS build does not expose LoopAsync.
+        ExecuteWithDelay(1000, function()
+            ExecuteInGameThread(function()
+                if not mainMenuStartupRecoveryComplete then
+                    scanForExistingMainMenu(1)
+                end
+            end)
+        end)
+    else
+        print("[PracticeMode] MAIN MENU async recovery loop started\n")
     end
 end
 
