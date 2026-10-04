@@ -2762,11 +2762,10 @@ local function rebuildExistingMainMenuOnce(menu, source)
                     "\n"
                 )
 
-                -- v1.0.1 TEST BUILD:
-                -- PreConstruct updates the backing ActionTypes map but, on the
-                -- failing cold-launch case, it does not recreate the already
-                -- constructed visible rows. Invoke the widget's Construct event
-                -- once to test whether Ballest rebuilds those rows safely.
+                -- PreConstruct updates the backing ActionTypes map, but on a
+                -- cold launch it does not recreate an already-constructed set
+                -- of visible rows. Invoke Construct once for this concrete
+                -- widget so Ballest rebuilds the visible menu from ActionTypes.
                 local constructOk, constructError = pcall(function()
                     menu:Construct()
                 end)
@@ -2775,7 +2774,7 @@ local function rebuildExistingMainMenuOnce(menu, source)
                     markMainMenuRebuilt(menu)
 
                     print(
-                        "[PracticeMode] MAIN MENU TEST Construct() succeeded" ..
+                        "[PracticeMode] MAIN MENU visible row rebuild succeeded" ..
                         (source and (" (" .. tostring(source) .. ")") or "") ..
                         "\n"
                     )
@@ -2791,7 +2790,7 @@ local function rebuildExistingMainMenuOnce(menu, source)
                     clearMainMenuPending(menu)
 
                     print(
-                        "[PracticeMode] MAIN MENU TEST Construct() failed: " ..
+                        "[PracticeMode] MAIN MENU visible row rebuild failed: " ..
                         tostring(constructError) ..
                         "\n"
                     )
