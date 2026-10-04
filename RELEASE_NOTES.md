@@ -18,6 +18,11 @@ First stable public release.
 The installer detects Ballest, installs UE4SS automatically if it is not already
 present, installs Practice Mode, and enables the mod.
 
+## Uninstall
+**Ballest-PracticeMode-Uninstaller.exe**
+
+Removes only Practice Mode. UE4SS and other mods are left untouched.
+
 ## Manual download
 **Ballest-PracticeMode-v1.0.0.zip**
 
