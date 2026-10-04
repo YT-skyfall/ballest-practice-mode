@@ -30,6 +30,8 @@ CloseApplications=no
 RestartApplications=no
 
 [Code]
+#include "QuietUE4SS.iss"
+
 const
   PracticeModeUninstallKey =
     'Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
@@ -267,7 +269,7 @@ end;
 
 function InitializeSetup(): Boolean;
 var
-  BallestDir, ModDir: string;
+  BallestDir, ModDir, SettingsPath: string;
 begin
   Result := False;
 
@@ -294,6 +296,9 @@ begin
   end;
 
   ModDir := AddBackslash(BallestDir) + 'ue4ss\Mods\PracticeMode';
+  SettingsPath := AddBackslash(BallestDir) + 'ue4ss\UE4SS-settings.ini';
+
+  RestoreUE4SSWindowSettings(SettingsPath, ModDir);
 
   if DirExists(ModDir) then
   begin
