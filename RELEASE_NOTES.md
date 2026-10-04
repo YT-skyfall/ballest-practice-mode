@@ -1,33 +1,26 @@
-# Ballest Practice Mode v1.0.0
+# Ballest Practice Mode v1.0.1
 
-First stable public release.
+Small compatibility and reliability update.
 
-## Features
+## Fixed
+- Fixed an intermittent cold-launch issue where the **Mods** button could be missing from Ballest's main menu until the player entered a track and returned.
+- Practice Mode now scans for an already-created main-menu widget after startup instead of relying only on the new-object callback.
+- Startup recovery retries briefly and rebuilds each concrete main-menu widget at most once.
+
+## Existing features
 - Enter Practice Mode before a track or from the results screen.
 - Set or replace a practice start point.
-- Normal restart returns to the practice point.
-- Death returns to the practice point.
+- Normal restart and death return to the practice point.
 - Full restart returns to the original track start.
-- Restart Practice works from the results screen.
 - Practice runs cannot submit leaderboard scores.
 - HUD shows Practice Mode state and attempt count.
 
 ## Recommended download
 **Ballest-PracticeMode-Installer.exe**
 
-The installer detects Ballest, installs UE4SS automatically if it is not already
-present, installs Practice Mode, and enables the mod. UE4SS debug windows are hidden on launch for a cleaner player experience, while Ctrl+O can still open the UE4SS GUI for troubleshooting.
-
-## Uninstall
-**Ballest-PracticeMode-Uninstaller.exe**
-
-Removes only Practice Mode. UE4SS and other mods are left untouched.
+The installer detects Ballest, installs UE4SS automatically if needed, installs Practice Mode, and enables it.
 
 ## Manual download
-**Ballest-PracticeMode-v1.0.0.zip**
+**Ballest-PracticeMode-v1.0.1.zip**
 
-Use the manual ZIP if you already have a compatible UE4SS installation or want
-to manage the files yourself.
-
-> Practice Mode is an unofficial community mod and is not affiliated with or
-> endorsed by the developers of Ballest of Them All.
+> Practice Mode is an unofficial community mod and is not affiliated with or endorsed by the developers of Ballest of Them All.
