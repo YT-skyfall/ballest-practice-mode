@@ -575,15 +575,15 @@ void UpdateRun(float dt)
 
 string SafeKey(const string &in raw)
 {
-    string out = "";
+    string result = "";
     for (uint i = 0; i < raw.length(); i++)
     {
         if (raw[i] == 61)
-            out += "%3D";
+            result += "%3D";
         else
-            out += raw.substr(i, 1);
+            result += raw.substr(i, 1);
     }
-    return out;
+    return result;
 }
 
 bool LooksLikeTower(const string &in key, const string &in name)
@@ -595,11 +595,11 @@ bool LooksLikeTower(const string &in key, const string &in name)
 
 string Lower(const string &in text)
 {
-    string out = text;
-    for (uint i = 0; i < out.length(); i++)
-        if (out[i] >= 65 && out[i] <= 90)
-            out[i] = out[i] + 32;
-    return out;
+    string result = text;
+    for (uint i = 0; i < result.length(); i++)
+        if (result[i] >= 65 && result[i] <= 90)
+            result[i] = result[i] + 32;
+    return result;
 }
 
 void WatchFinish()
