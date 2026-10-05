@@ -1,0 +1,10 @@
+[meta]
+name = "Achievement Tracker"
+version = "0.1.0"
+author = "YT-skyfall"
+description = "Tracks local progress toward Ballest's 16 Steam achievements in game, with a full browser and pinnable HUD."
+min_host = "0.23.6"
+
+[script]
+files = ["main.as"]
+timeout = 30
