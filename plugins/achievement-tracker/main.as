@@ -277,6 +277,11 @@ bool LocalComplete(Achievement@ a)
     return false;
 }
 
+double MinD(double a, double b)
+{
+    return a < b ? a : b;
+}
+
 double LocalValue(Achievement@ a)
 {
     if (a.id == "miles") return distanceCm / CM_PER_MILE;
@@ -292,10 +297,10 @@ string ProgressText(Achievement@ a)
         return "Steam sync needed";
 
     if (a.id == "miles")
-        return formatFloat(Math::min(LocalValue(a), a.goal), "", 0, 1) + " / 500 mi";
+        return formatFloat(MinD(LocalValue(a), a.goal), "", 0, 1) + " / 500 mi";
 
     if (a.goal > 1)
-        return int(Math::min(LocalValue(a), a.goal)) + " / " + int(a.goal);
+        return int(MinD(LocalValue(a), a.goal)) + " / " + int(a.goal);
 
     return LocalComplete(a) ? "local evidence: complete" : "not seen locally yet";
 }
