@@ -13,10 +13,11 @@ local EXIT_ACTION = 2
 -- Practice Mode v1.0.1 is tested against this exact public Steam build.
 -- Any unrecognized Ballest build is treated as unsafe until a new mod
 -- release explicitly adds support.
-local MOD_VERSION = "1.0.1"
+local MOD_VERSION = "1.0.2-test"
 local SAFETY_LOCK_FORMAT = "2"
 local SUPPORTED_STEAM_BUILD_IDS = {
-    ["25608493"] = true
+    ["25608493"] = true,
+    ["25759253"] = true
 }
 
 ---------------------------------------------------------
@@ -4224,6 +4225,8 @@ RegisterKeyBind(
         print("[PracticeMode] leaderboardProtectionReady = " .. tostring(leaderboardProtectionReady) .. "\n")
         print("[PracticeMode] primaryUploadProtectionReady = " .. tostring(primaryUploadProtectionReady) .. "\n")
         print("[PracticeMode] secondaryScoreProtectionReady = " .. tostring(secondaryScoreProtectionReady) .. "\n")
+        print("[PracticeMode] restartHooksRegistered = " .. tostring(restartHooksRegistered) .. "\n")
+        print("[PracticeMode] restartInputActionsRegistered = " .. tostring(restartInputActionsRegistered) .. "\n")
         print("[PracticeMode] safetyReason = " .. tostring(compatibilityLockReason) .. "\n")
         print("[PracticeMode] attempts = " .. tostring(attempts) .. "\n")
         print("[PracticeMode] indicators = " .. tostring(#practiceIndicators) .. "\n")
