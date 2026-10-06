@@ -10,10 +10,10 @@ local SET_POINT_ACTION = 251
 local EXIT_ACTION = 2
 
 -- Safety/compatibility contract.
--- Practice Mode v1.0.1 is tested against this exact public Steam build.
+-- Practice Mode v1.0.2 is tested against the supported Steam builds below.
 -- Any unrecognized Ballest build is treated as unsafe until a new mod
 -- release explicitly adds support.
-local MOD_VERSION = "1.0.2-test"
+local MOD_VERSION = "1.0.2"
 local SAFETY_LOCK_FORMAT = "2"
 local SUPPORTED_STEAM_BUILD_IDS = {
     ["25608493"] = true,
