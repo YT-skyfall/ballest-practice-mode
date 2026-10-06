@@ -1,21 +1,20 @@
-# Ballest Practice Mode v1.0.1
+# Ballest Practice Mode v1.0.2
 
-Small compatibility and reliability update.
+Compatibility update for Ballest's October 6, 2026 update.
 
-## Fixed
-- Fixed an intermittent cold-launch issue where the **Mods** button could be missing from Ballest's main menu until the player entered a track and returned.
-- Practice Mode now scans for an already-created main-menu widget after startup instead of relying only on the new-object callback.
-- If the menu was already constructed before Practice Mode loaded, it now rebuilds the visible rows once so the **Mods** entry actually appears.
-- Startup recovery retries briefly and rebuilds each concrete main-menu widget at most once.
-- Verified across five consecutive cold launches with the AnythingGoes Plugin Manager installed.
+## Updated
+- Added support for Ballest Steam build `25759253`.
+- Retained support for the previous tested Steam build `25608493`.
+- Verified Practice Mode entry before a track and from the results screen.
+- Verified set/replace practice point, normal restart, death/respawn, full restart, and post-track Restart Practice.
+- Verified Ballest's new results-screen restart-race bind works correctly with Practice Mode.
+- Verified the mandatory leaderboard protection hooks remain ready on build `25759253`.
+- Added restart-hook readiness to the F8 diagnostics.
 
-## Existing features
-- Enter Practice Mode before a track or from the results screen.
-- Set or replace a practice start point.
-- Normal restart and death return to the practice point.
-- Full restart returns to the original track start.
-- Practice runs cannot submit leaderboard scores.
-- HUD shows Practice Mode state and attempt count.
+## Safety
+Practice Mode remains fail-closed. Unknown Ballest builds are disabled until they are explicitly tested and added.
+
+Practice runs remain blocked from leaderboard submission by the existing primary and secondary protections.
 
 ## Recommended download
 **Ballest-PracticeMode-Installer.exe**
@@ -23,6 +22,6 @@ Small compatibility and reliability update.
 The installer detects Ballest, installs UE4SS automatically if needed, installs Practice Mode, and enables it.
 
 ## Manual download
-**Ballest-PracticeMode-v1.0.1.zip**
+**Ballest-PracticeMode-v1.0.2.zip**
 
 > Practice Mode is an unofficial community mod and is not affiliated with or endorsed by the developers of Ballest of Them All.

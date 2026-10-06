@@ -1,10 +1,10 @@
-; Ballest Practice Mode v1.0.1
+; Ballest Practice Mode v1.0.2
 ; Built by GitHub Actions on Windows using Inno Setup 6.
 ; UE4SS files are bundled from the official UE4SS release and are only
 ; installed when a working UE4SS installation is not already detected.
 
 #define MyAppName "Ballest Practice Mode"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "Ballest Practice Mode"
 #define MyAppExeName "Ballest-Win64-Shipping.exe"
 

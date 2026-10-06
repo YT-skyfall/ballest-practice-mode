@@ -12,7 +12,7 @@ It installs UE4SS automatically when needed.
 
 A manual ZIP is also published for users who already manage UE4SS themselves.
 
-## v1.0.1 features
+## v1.0.2 features
 
 - Pre-track and post-track Practice Mode entry
 - Set / replace practice start
@@ -22,6 +22,7 @@ A manual ZIP is also published for users who already manage UE4SS themselves.
 - Post-track Restart Practice
 - Leaderboard protection
 - Attempt HUD
+- Compatibility with Ballest Steam build `25759253` (October 6 update)
 
 ## Build the installer
 
