@@ -1,8 +1,8 @@
 $ErrorActionPreference = "Stop"
 
-$Version = "v3.0.1-1152-ge3ba1016"
+$Version = "v3.0.1-1161-g6eb3d9bc"
 $Url = "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/UE4SS_$Version.zip"
-$ExpectedSha256 = "af8ea9d8975e8eff7967423f43b8b50875e66a29a0f434cffce6e0867ea17252"
+$ExpectedSha256 = "938dc9901e6452cad3120280681c93a00ae12df2b259668815a150e221a35563"
 
 $InstallerDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Payload = Join-Path $InstallerDir "payload"
