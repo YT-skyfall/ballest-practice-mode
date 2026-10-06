@@ -2,7 +2,7 @@
 ; Removes only Practice Mode. UE4SS and all other mods are intentionally preserved.
 
 #define MyAppName "Ballest Practice Mode Uninstaller"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define BallestExe "Ballest-Win64-Shipping.exe"
 
 [Setup]
