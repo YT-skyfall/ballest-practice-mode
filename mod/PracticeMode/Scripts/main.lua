@@ -99,8 +99,8 @@ local trackedMenus = {}
 -- Player HUD indicators created by this mod.
 local practiceIndicators = {}
 
--- v1.1.0 UI experiment. Keep this local to the test branch until the new
--- pause/HUD design has been validated in-game.
+-- v1.1.0 UI work. Keep this local to the test branch until the native-style
+-- pause/HUD layout has been validated in-game.
 local practiceHudMode = "compact" -- compact | full | off
 
 print("[PracticeMode] Loaded successfully\n")
@@ -1127,17 +1127,17 @@ local function getPracticeIndicatorText()
 
     if practiceHudMode == "compact" then
         if needsPoint then
-            return "PRACTICE  |  SET POINT  |  LEADERBOARDS OFF"
+            return "PRACTICE   SET POINT   LB OFF"
         end
 
         if practiceActive and savedLocation and savedRotation then
             return string.format(
-                "PRACTICE  |  ATTEMPT %d  |  POINT SET",
+                "PRACTICE   A%d   POINT SET",
                 displayAttempt
             )
         end
 
-        return "PRACTICE  |  LEADERBOARDS OFF"
+        return "PRACTICE   LB OFF"
     end
 
     if needsPoint then
@@ -1440,7 +1440,7 @@ local function getPracticeLabel(menuType)
 
     if menuType == "POST TRACK" then
         if practiceActive and savedLocation and savedRotation then
-            return "restart practice"
+            return "practice  < restart >"
         end
 
         return "practice mode"
@@ -1451,10 +1451,10 @@ local function getPracticeLabel(menuType)
     end
 
     if placementMode then
-        return "resume practice setup"
+        return "practice  < resume setup >"
     end
 
-    return "restart practice"
+    return "practice  < restart >"
 end
 
 local function getSetPointLabel()
@@ -1467,26 +1467,26 @@ local function getSetPointLabel()
     end
 
     if practiceActive and savedLocation and savedRotation then
-        return "set new practice start"
+        return "practice point  < replace >"
     end
 
-    return "set practice start"
+    return "practice point  < set >"
 end
 
 local function getHudModeLabel()
     if compatibilityLocked then
-        return "practice hud: update required"
+        return "practice hud  < update required >"
     end
 
     if practiceHudMode == "full" then
-        return "practice hud: full"
+        return "practice hud  < full >"
     end
 
     if practiceHudMode == "off" then
-        return "practice hud: off"
+        return "practice hud  < off >"
     end
 
-    return "practice hud: compact"
+    return "practice hud  < compact >"
 end
 
 local function cycleHudMode()
