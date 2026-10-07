@@ -12,9 +12,11 @@ It installs UE4SS automatically when needed.
 
 A manual ZIP is also published for users who already manage UE4SS themselves.
 
-### Installation video
+### Watch the trailer on YouTube
 
-[![Watch the Ballest Practice Mode installation video](https://img.youtube.com/vi/Qnr5Lg_EM04/maxresdefault.jpg)](https://youtu.be/Qnr5Lg_EM04?si=EQH5ikE_Awmc4ZF4)
+**▶ [Watch the Ballest Practice Mode trailer on YouTube](https://youtu.be/Qnr5Lg_EM04?si=EQH5ikE_Awmc4ZF4)**
+
+[![Ballest Practice Mode trailer on YouTube](https://img.youtube.com/vi/Qnr5Lg_EM04/maxresdefault.jpg)](https://youtu.be/Qnr5Lg_EM04?si=EQH5ikE_Awmc4ZF4)
 
 ## v1.0.2 features
 
