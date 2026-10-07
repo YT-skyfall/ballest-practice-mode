@@ -1499,7 +1499,6 @@ local function cycleHudMode()
     end
 
     syncPracticeIndicators()
-    syncAllMenus()
 
     print(
         "[PracticeMode] Practice HUD mode -> " ..
@@ -3312,6 +3311,7 @@ local customEventOk, customEventError = pcall(function()
                 end
 
                 cycleHudMode()
+                syncAllMenus()
                 return
             end
 
