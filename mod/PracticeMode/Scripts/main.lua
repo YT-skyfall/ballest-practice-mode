@@ -7,6 +7,7 @@ local UEHelpers = require("UEHelpers")
 local MODS_ACTION = 249
 local PRACTICE_ACTION = 250
 local SET_POINT_ACTION = 251
+local HUD_MODE_ACTION = 252
 local EXIT_ACTION = 2
 
 -- Safety/compatibility contract.
@@ -97,6 +98,10 @@ local trackedMenus = {}
 
 -- Player HUD indicators created by this mod.
 local practiceIndicators = {}
+
+-- v1.1.0 UI experiment. Keep this local to the test branch until the new
+-- pause/HUD design has been validated in-game.
+local practiceHudMode = "compact" -- compact | full | off
 
 print("[PracticeMode] Loaded successfully\n")
 
@@ -1102,25 +1107,44 @@ local function setIndicatorVisible(indicator, visible)
 end
 
 local function getPracticeIndicatorText()
+    -- Safety/update warnings are always explicit, even if the normal HUD is
+    -- configured as compact or off.
     if compatibilityLocked then
         return "PRACTICE MODE DISABLED\nUPDATE REQUIRED\nLEADERBOARDS PROTECTED"
     end
 
-    if practiceActive and (
-        placementMode
-        or not savedLocation
-        or not savedRotation
-    ) then
+    local needsPoint =
+        practiceActive and (
+            placementMode
+            or not savedLocation
+            or not savedRotation
+        )
+
+    local displayAttempt = attempts
+    if displayAttempt < 1 then
+        displayAttempt = 1
+    end
+
+    if practiceHudMode == "compact" then
+        if needsPoint then
+            return "PRACTICE  |  SET POINT  |  LEADERBOARDS OFF"
+        end
+
+        if practiceActive and savedLocation and savedRotation then
+            return string.format(
+                "PRACTICE  |  ATTEMPT %d  |  POINT SET",
+                displayAttempt
+            )
+        end
+
+        return "PRACTICE  |  LEADERBOARDS OFF"
+    end
+
+    if needsPoint then
         return "PRACTICE MODE\nSET A PRACTICE POINT\nLEADERBOARDS DISABLED"
     end
 
     if practiceActive and savedLocation and savedRotation then
-        local displayAttempt = attempts
-
-        if displayAttempt < 1 then
-            displayAttempt = 1
-        end
-
         return string.format(
             "PRACTICE MODE\nATTEMPT %d | POINT SET\nLEADERBOARDS DISABLED",
             displayAttempt
@@ -1156,7 +1180,15 @@ local function syncPracticeIndicators()
     for _, indicator in ipairs(practiceIndicators) do
         if isValidObject(indicator) then
             updatePracticeIndicatorText(indicator)
-            setIndicatorVisible(indicator, runVoided)
+
+            local showIndicator =
+                runVoided
+                and (
+                    compatibilityLocked
+                    or practiceHudMode ~= "off"
+                )
+
+            setIndicatorVisible(indicator, showIndicator)
             table.insert(kept, indicator)
         end
     end
@@ -1303,7 +1335,14 @@ local function createPracticeIndicator(playerUI)
             })
         end)
 
-        setIndicatorVisible(indicator, runVoided)
+        local showIndicator =
+            runVoided
+            and (
+                compatibilityLocked
+                or practiceHudMode ~= "off"
+            )
+
+        setIndicatorVisible(indicator, showIndicator)
     end)
 
     if not setupOk then
@@ -1434,6 +1473,41 @@ local function getSetPointLabel()
     return "set practice start"
 end
 
+local function getHudModeLabel()
+    if compatibilityLocked then
+        return "practice hud: update required"
+    end
+
+    if practiceHudMode == "full" then
+        return "practice hud: full"
+    end
+
+    if practiceHudMode == "off" then
+        return "practice hud: off"
+    end
+
+    return "practice hud: compact"
+end
+
+local function cycleHudMode()
+    if practiceHudMode == "compact" then
+        practiceHudMode = "full"
+    elseif practiceHudMode == "full" then
+        practiceHudMode = "off"
+    else
+        practiceHudMode = "compact"
+    end
+
+    syncPracticeIndicators()
+    syncAllMenus()
+
+    print(
+        "[PracticeMode] Practice HUD mode -> " ..
+        tostring(practiceHudMode) ..
+        "\n"
+    )
+end
+
 ---------------------------------------------------------
 -- UPDATE EXISTING BUTTONS
 ---------------------------------------------------------
@@ -1517,11 +1591,31 @@ local function updateMenuLabel(menu)
                 FText(setPointLabel)
             )
 
+            local hudModeLabel = getHudModeLabel()
+
+            actionTypes:Add(
+                HUD_MODE_ACTION,
+                FText(hudModeLabel)
+            )
+
+            menu:UpdateMapLabel(
+                HUD_MODE_ACTION,
+                FText(hudModeLabel)
+            )
+
             print(
                 "[PracticeMode] " ..
                 tostring(menuType) ..
                 " set-point button -> " ..
                 tostring(setPointLabel) ..
+                "\n"
+            )
+
+            print(
+                "[PracticeMode] " ..
+                tostring(menuType) ..
+                " HUD row -> " ..
+                tostring(hudModeLabel) ..
                 "\n"
             )
         end
@@ -3035,6 +3129,11 @@ local notifyOk, notifyError = pcall(function()
                             SET_POINT_ACTION,
                             FText(getSetPointLabel())
                         )
+
+                        actionTypes:Add(
+                            HUD_MODE_ACTION,
+                            FText(getHudModeLabel())
+                        )
                     end
                 end
             end)
@@ -3193,6 +3292,27 @@ local customEventOk, customEventError = pcall(function()
 
                 print("[PracticeMode] Track exit detected\n")
                 clearPracticeSessionAfterExit()
+            end
+
+            -------------------------------------------------
+            -- PRACTICE HUD MODE
+            -------------------------------------------------
+
+            if action == HUD_MODE_ACTION
+                and (
+                    menuType == "GAMEPLAY PAUSE"
+                    or menuType == "EDITOR PAUSE"
+                ) then
+
+                if compatibilityLocked then
+                    print(
+                        "[PracticeMode] HUD setting unavailable while update is required\n"
+                    )
+                    return
+                end
+
+                cycleHudMode()
+                return
             end
 
             -------------------------------------------------
@@ -4230,6 +4350,7 @@ RegisterKeyBind(
         print("[PracticeMode] safetyReason = " .. tostring(compatibilityLockReason) .. "\n")
         print("[PracticeMode] attempts = " .. tostring(attempts) .. "\n")
         print("[PracticeMode] indicators = " .. tostring(#practiceIndicators) .. "\n")
+        print("[PracticeMode] hudMode = " .. tostring(practiceHudMode) .. "\n")
         print("[PracticeMode] ==================\n")
         print("\n")
     end
