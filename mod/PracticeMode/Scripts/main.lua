@@ -8,6 +8,9 @@ local MODS_ACTION = 249
 local PRACTICE_ACTION = 250
 local SET_POINT_ACTION = 251
 local HUD_MODE_ACTION = 252
+local MODS_PRACTICE_TOGGLE_ACTION = 253
+local SUBMENU_BACK_ACTION = 254
+local PRACTICE_RUN_ACTION = 255
 local EXIT_ACTION = 2
 
 -- Safety/compatibility contract.
@@ -95,6 +98,12 @@ local suppressNextPracticeRaceRestart = false
 
 -- Ballest reuses some menu widgets, so keep references.
 local trackedMenus = {}
+
+-- v1.1 menu navigation. We snapshot a live Ballest menu before replacing its
+-- rows, then restore that exact menu when BACK is selected. This keeps the
+-- game's native menu as the host instead of drawing a separate fake overlay.
+local menuSubmenuState = {}
+local menuActionSnapshots = {}
 
 -- Player HUD indicators created by this mod.
 local practiceIndicators = {}
@@ -1413,18 +1422,19 @@ end
 ---------------------------------------------------------
 
 local function getModsLabel()
+    -- MODS is now a real submenu entry. Keep the parent row stable; status is
+    -- shown inside the Mods page instead of cramming it into the main menu.
+    return "mods"
+end
+
+local function getModsPracticeToggleLabel()
     if compatibilityLocked then
-        return "mods: practice update required"
+        return "practice mode  < update required >"
     end
 
-    -- Keep the main-menu entry named simply "mods" when enabled.
-    -- While we are still building the real Mods page, the temporary disabled
-    -- state is shown directly in the label so the toggle is visible.
-    if practiceFeatureEnabled then
-        return "mods"
-    end
-
-    return "mods: practice disabled"
+    return "practice mode  < " ..
+        (practiceFeatureEnabled and "enabled" or "disabled") ..
+        " >"
 end
 
 local function getPracticeLabel(menuType)
@@ -1432,38 +1442,42 @@ local function getPracticeLabel(menuType)
         return "practice mode (update required)"
     end
 
-    -- Keep the primary practice button present even when the feature is
-    -- disabled. The dedicated set-point row below is only added to pause menus.
     if not practiceFeatureEnabled then
         return "practice mode (disabled)"
     end
 
-    if menuType == "POST TRACK" then
-        if practiceActive and savedLocation and savedRotation then
-            return "practice  < restart >"
-        end
+    -- The parent pause/results menu gets only one Practice Mode row. All
+    -- Practice-specific controls live on the dedicated submenu.
+    return "practice mode"
+end
 
-        return "practice mode"
+local function getPracticeRunLabel(menuType)
+    if compatibilityLocked then
+        return "practice  < update required >"
+    end
+
+    if not practiceFeatureEnabled then
+        return "practice  < disabled >"
     end
 
     if not practiceActive then
-        return "practice mode"
+        return "start practice"
     end
 
     if placementMode then
-        return "practice  < resume setup >"
+        return "resume practice setup"
     end
 
-    return "practice  < restart >"
+    return "restart practice"
 end
 
 local function getSetPointLabel()
     if compatibilityLocked then
-        return "set practice start (update required)"
+        return "practice point  < update required >"
     end
 
     if not practiceFeatureEnabled then
-        return "set practice start (disabled)"
+        return "practice point  < disabled >"
     end
 
     if practiceActive and savedLocation and savedRotation then
@@ -1508,6 +1522,237 @@ local function cycleHudMode()
 end
 
 ---------------------------------------------------------
+-- V1.1 NATIVE SUBMENU HELPERS
+---------------------------------------------------------
+
+local function getMenuStateKey(menu)
+    local path = getObjectPath(menu)
+    if path then
+        return path
+    end
+
+    return tostring(menu)
+end
+
+local function snapshotMenuActions(menu)
+    if not isValidObject(menu) then
+        return nil
+    end
+
+    local actionTypes = menu.ActionTypes
+    if not actionTypes then
+        return nil
+    end
+
+    local snapshot = {}
+
+    local ok, errorMessage = pcall(function()
+        actionTypes:ForEach(function(keyParam, valueParam)
+            local key = getParam(keyParam)
+            local value = getParam(valueParam)
+
+            table.insert(snapshot, {
+                key = key,
+                label = textToString(value)
+            })
+        end)
+    end)
+
+    if not ok then
+        print(
+            "[PracticeMode][UI] Could not snapshot menu actions: " ..
+            tostring(errorMessage) ..
+            "\n"
+        )
+        return nil
+    end
+
+    return snapshot
+end
+
+local function rebuildMenuRows(menu, rows)
+    if not isValidObject(menu) then
+        return false
+    end
+
+    local ok, errorMessage = pcall(function()
+        local actionTypes = menu.ActionTypes
+
+        if not actionTypes then
+            error("ActionTypes was nil")
+        end
+
+        actionTypes:Empty()
+
+        for _, row in ipairs(rows) do
+            actionTypes:Add(
+                row.action,
+                FText(row.label)
+            )
+        end
+
+        -- This is the same native WBP_MenuTextGroup rebuild path already used
+        -- by the proven startup Mods injection. No custom UMG skin is drawn.
+        menu:Construct()
+        menu:RefreshMenuLabels()
+    end)
+
+    if not ok then
+        print(
+            "[PracticeMode][UI] Menu row rebuild failed: " ..
+            tostring(errorMessage) ..
+            "\n"
+        )
+        return false
+    end
+
+    return true
+end
+
+local function restoreParentMenu(menu)
+    if not isValidObject(menu) then
+        return false
+    end
+
+    local key = getMenuStateKey(menu)
+    local snapshot = menuActionSnapshots[key]
+
+    if not snapshot then
+        return false
+    end
+
+    local rows = {}
+
+    for _, entry in ipairs(snapshot) do
+        table.insert(rows, {
+            action = entry.key,
+            label = entry.label
+        })
+    end
+
+    local restored = rebuildMenuRows(menu, rows)
+
+    if restored then
+        menuSubmenuState[key] = nil
+        menuActionSnapshots[key] = nil
+
+        -- Refresh dynamic labels such as Practice Mode status after the parent
+        -- rows have been restored.
+        ExecuteWithDelay(25, function()
+            ExecuteInGameThread(function()
+                if isValidObject(menu) then
+                    updateMenuLabel(menu)
+                end
+            end)
+        end)
+
+        print("[PracticeMode][UI] Returned to parent menu\n")
+    end
+
+    return restored
+end
+
+local function openModsSubmenu(menu)
+    if not isValidObject(menu) then
+        return false
+    end
+
+    local key = getMenuStateKey(menu)
+
+    if not menuActionSnapshots[key] then
+        menuActionSnapshots[key] = snapshotMenuActions(menu)
+    end
+
+    if not menuActionSnapshots[key] then
+        return false
+    end
+
+    local opened = rebuildMenuRows(menu, {
+        {
+            action = MODS_PRACTICE_TOGGLE_ACTION,
+            label = getModsPracticeToggleLabel()
+        },
+        {
+            action = SUBMENU_BACK_ACTION,
+            label = "back"
+        }
+    })
+
+    if opened then
+        menuSubmenuState[key] = {
+            kind = "mods",
+            menuType = "MAIN MENU"
+        }
+
+        print("[PracticeMode][UI] Opened Mods submenu\n")
+    end
+
+    return opened
+end
+
+local function openPracticeSubmenu(menu, menuType)
+    if not isValidObject(menu) then
+        return false
+    end
+
+    local key = getMenuStateKey(menu)
+
+    if not menuActionSnapshots[key] then
+        menuActionSnapshots[key] = snapshotMenuActions(menu)
+    end
+
+    if not menuActionSnapshots[key] then
+        return false
+    end
+
+    local rows = {
+        {
+            action = PRACTICE_RUN_ACTION,
+            label = getPracticeRunLabel(menuType)
+        }
+    }
+
+    local canSetPoint =
+        menuType == "GAMEPLAY PAUSE"
+        or menuType == "EDITOR PAUSE"
+
+    if canSetPoint then
+        table.insert(rows, {
+            action = SET_POINT_ACTION,
+            label = getSetPointLabel()
+        })
+    end
+
+    table.insert(rows, {
+        action = HUD_MODE_ACTION,
+        label = getHudModeLabel()
+    })
+
+    table.insert(rows, {
+        action = SUBMENU_BACK_ACTION,
+        label = "back"
+    })
+
+    local opened = rebuildMenuRows(menu, rows)
+
+    if opened then
+        menuSubmenuState[key] = {
+            kind = "practice",
+            menuType = menuType,
+            canSetPoint = canSetPoint
+        }
+
+        print(
+            "[PracticeMode][UI] Opened Practice Mode submenu from " ..
+            tostring(menuType) ..
+            "\n"
+        )
+    end
+
+    return opened
+end
+
+---------------------------------------------------------
 -- UPDATE EXISTING BUTTONS
 ---------------------------------------------------------
 
@@ -1532,10 +1777,75 @@ local function updateMenuLabel(menu)
         return
     end
 
+    local stateKey = getMenuStateKey(menu)
+    local submenu = menuSubmenuState[stateKey]
+
     local ok, errorMessage = pcall(function()
         local actionTypes = menu.ActionTypes
 
         if not actionTypes then
+            return
+        end
+
+        -- When a v1.1 submenu is open, update only its own dynamic rows. Do not
+        -- inject parent-menu buttons back into it.
+        if submenu and submenu.kind == "mods" then
+            local label = getModsPracticeToggleLabel()
+
+            actionTypes:Add(
+                MODS_PRACTICE_TOGGLE_ACTION,
+                FText(label)
+            )
+
+            menu:UpdateMapLabel(
+                MODS_PRACTICE_TOGGLE_ACTION,
+                FText(label)
+            )
+
+            menu:RefreshMenuLabels()
+            return
+        end
+
+        if submenu and submenu.kind == "practice" then
+            local runLabel = getPracticeRunLabel(submenu.menuType)
+
+            actionTypes:Add(
+                PRACTICE_RUN_ACTION,
+                FText(runLabel)
+            )
+
+            menu:UpdateMapLabel(
+                PRACTICE_RUN_ACTION,
+                FText(runLabel)
+            )
+
+            if submenu.canSetPoint then
+                local pointLabel = getSetPointLabel()
+
+                actionTypes:Add(
+                    SET_POINT_ACTION,
+                    FText(pointLabel)
+                )
+
+                menu:UpdateMapLabel(
+                    SET_POINT_ACTION,
+                    FText(pointLabel)
+                )
+            end
+
+            local hudLabel = getHudModeLabel()
+
+            actionTypes:Add(
+                HUD_MODE_ACTION,
+                FText(hudLabel)
+            )
+
+            menu:UpdateMapLabel(
+                HUD_MODE_ACTION,
+                FText(hudLabel)
+            )
+
+            menu:RefreshMenuLabels()
             return
         end
 
@@ -1563,6 +1873,8 @@ local function updateMenuLabel(menu)
             return
         end
 
+        -- Parent track/pause/results menus now get ONE Practice Mode row only.
+        -- SET POINT and HUD live inside the dedicated Practice Mode submenu.
         local label = getPracticeLabel(menuType)
 
         actionTypes:Add(
@@ -1574,50 +1886,6 @@ local function updateMenuLabel(menu)
             PRACTICE_ACTION,
             FText(label)
         )
-
-        if menuType == "GAMEPLAY PAUSE"
-            or menuType == "EDITOR PAUSE" then
-
-            local setPointLabel = getSetPointLabel()
-
-            actionTypes:Add(
-                SET_POINT_ACTION,
-                FText(setPointLabel)
-            )
-
-            menu:UpdateMapLabel(
-                SET_POINT_ACTION,
-                FText(setPointLabel)
-            )
-
-            local hudModeLabel = getHudModeLabel()
-
-            actionTypes:Add(
-                HUD_MODE_ACTION,
-                FText(hudModeLabel)
-            )
-
-            menu:UpdateMapLabel(
-                HUD_MODE_ACTION,
-                FText(hudModeLabel)
-            )
-
-            print(
-                "[PracticeMode] " ..
-                tostring(menuType) ..
-                " set-point button -> " ..
-                tostring(setPointLabel) ..
-                "\n"
-            )
-
-            print(
-                "[PracticeMode] " ..
-                tostring(menuType) ..
-                " HUD row -> " ..
-                tostring(hudModeLabel) ..
-                "\n"
-            )
-        end
 
         menu:RefreshMenuLabels()
 
@@ -3120,20 +3388,6 @@ local notifyOk, notifyError = pcall(function()
                         PRACTICE_ACTION,
                         FText(getPracticeLabel(menuType))
                     )
-
-                    if menuType == "GAMEPLAY PAUSE"
-                        or menuType == "EDITOR PAUSE" then
-
-                        actionTypes:Add(
-                            SET_POINT_ACTION,
-                            FText(getSetPointLabel())
-                        )
-
-                        actionTypes:Add(
-                            HUD_MODE_ACTION,
-                            FText(getHudModeLabel())
-                        )
-                    end
                 end
             end)
 
@@ -3226,10 +3480,21 @@ local customEventOk, customEventError = pcall(function()
             print("[PracticeMode] ActionType = " .. tostring(action) .. "\n")
 
             -------------------------------------------------
-            -- MAIN-MENU MODS BUTTON
+            -- MAIN-MENU MODS BUTTON -> DEDICATED MODS MENU
             -------------------------------------------------
 
             if action == MODS_ACTION
+                and menuType == "MAIN MENU" then
+
+                openModsSubmenu(menu)
+                return
+            end
+
+            -------------------------------------------------
+            -- MODS -> PRACTICE MODE ENABLE / DISABLE
+            -------------------------------------------------
+
+            if action == MODS_PRACTICE_TOGGLE_ACTION
                 and menuType == "MAIN MENU" then
 
                 if compatibilityLocked then
@@ -3245,9 +3510,9 @@ local customEventOk, customEventError = pcall(function()
                 practiceFeatureEnabled =
                     not practiceFeatureEnabled
 
-                -- The Mods setting is changed from the main menu, where no
-                -- current race should remain active. Clear stale practice
-                -- state so the next track begins cleanly.
+                -- This setting is changed from the main menu, where no current
+                -- race should remain active. Clear stale practice state so the
+                -- next track begins cleanly.
                 practiceActive = false
                 placementMode = false
                 runVoided = false
@@ -3263,18 +3528,22 @@ local customEventOk, customEventError = pcall(function()
                 syncPracticeIndicators()
                 syncAllMenus()
 
-                print("\n")
-                print("[PracticeMode] ===== MODS =====\n")
                 print(
-                    "[PracticeMode] Practice Mode = " ..
+                    "[PracticeMode][UI] Practice Mode setting -> " ..
                     (practiceFeatureEnabled and "ENABLED" or "DISABLED") ..
                     "\n"
                 )
-                print(
-                    "[PracticeMode] The setting applies to future track menus/runs.\n"
-                )
-                print("[PracticeMode] ================\n")
-                print("\n")
+
+                return
+            end
+
+            -------------------------------------------------
+            -- SUBMENU BACK
+            -------------------------------------------------
+
+            if action == SUBMENU_BACK_ACTION then
+                restoreParentMenu(menu)
+                return
             end
 
             -------------------------------------------------
@@ -3297,11 +3566,14 @@ local customEventOk, customEventError = pcall(function()
             -- PRACTICE HUD MODE
             -------------------------------------------------
 
-            if action == HUD_MODE_ACTION
-                and (
-                    menuType == "GAMEPLAY PAUSE"
-                    or menuType == "EDITOR PAUSE"
-                ) then
+            if action == HUD_MODE_ACTION then
+                local submenu =
+                    menuSubmenuState[getMenuStateKey(menu)]
+
+                if not submenu
+                    or submenu.kind ~= "practice" then
+                    return
+                end
 
                 if compatibilityLocked then
                     print(
@@ -3324,6 +3596,14 @@ local customEventOk, customEventError = pcall(function()
                     menuType == "GAMEPLAY PAUSE"
                     or menuType == "EDITOR PAUSE"
                 ) then
+
+                local submenu =
+                    menuSubmenuState[getMenuStateKey(menu)]
+
+                if not submenu
+                    or submenu.kind ~= "practice" then
+                    return
+                end
 
                 if not practiceFeatureEnabled then
                     print("[PracticeMode] Practice Mode is disabled in Mods\n")
@@ -3348,6 +3628,7 @@ local customEventOk, customEventError = pcall(function()
                     local started = restartPractice()
 
                     if started then
+                        restoreParentMenu(menu)
                         closePauseMenuSoon(100)
                     end
                 end
@@ -3369,6 +3650,23 @@ local customEventOk, customEventError = pcall(function()
             -------------------------------------------------
 
             if action == PRACTICE_ACTION then
+                openPracticeSubmenu(menu, menuType)
+                return
+            end
+
+            -------------------------------------------------
+            -- PRACTICE SUBMENU PRIMARY ACTION
+            -------------------------------------------------
+
+            if action == PRACTICE_RUN_ACTION then
+                local submenu =
+                    menuSubmenuState[getMenuStateKey(menu)]
+
+                if not submenu
+                    or submenu.kind ~= "practice" then
+                    return
+                end
+
                 if not practiceFeatureEnabled then
                     print("[PracticeMode] Practice Mode is disabled in Mods\n")
                     syncAllMenus()
@@ -3381,6 +3679,10 @@ local customEventOk, customEventError = pcall(function()
                 end
 
                 practiceClickLocked = true
+
+                -- Restore the native parent rows before any action that closes
+                -- this menu or asks Ballest to transition to another screen.
+                restoreParentMenu(menu)
 
                 -- State 1: Practice Mode off.
                 if not practiceActive then
@@ -4351,6 +4653,13 @@ RegisterKeyBind(
         print("[PracticeMode] attempts = " .. tostring(attempts) .. "\n")
         print("[PracticeMode] indicators = " .. tostring(#practiceIndicators) .. "\n")
         print("[PracticeMode] hudMode = " .. tostring(practiceHudMode) .. "\n")
+        local openSubmenus = 0
+        for _, state in pairs(menuSubmenuState) do
+            if state then
+                openSubmenus = openSubmenus + 1
+            end
+        end
+        print("[PracticeMode] openSubmenus = " .. tostring(openSubmenus) .. "\n")
         print("[PracticeMode] ==================\n")
         print("\n")
     end
