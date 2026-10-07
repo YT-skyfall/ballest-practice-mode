@@ -1525,6 +1525,8 @@ end
 -- V1.1 NATIVE SUBMENU HELPERS
 ---------------------------------------------------------
 
+local updateMenuLabel
+
 local function getMenuStateKey(menu)
     local path = getObjectPath(menu)
     if path then
@@ -1756,7 +1758,7 @@ end
 -- UPDATE EXISTING BUTTONS
 ---------------------------------------------------------
 
-local function updateMenuLabel(menu)
+updateMenuLabel = function(menu)
     if not isValidObject(menu) then
         return
     end
