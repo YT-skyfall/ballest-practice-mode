@@ -20,7 +20,7 @@ A manual ZIP is also published for users who already manage UE4SS themselves.
 
 ## Found a bug?
 
-**[Report a bug using the simple GitHub form](https://github.com/YT-skyfall/ballest-practice-mode/issues/new?template=bug_report.yml)** — just tell us what went wrong. No technical details or logs are required. You'll need a free GitHub account to submit it.
+**[Report a bug using the simple GitHub form](https://github.com/YT-skyfall/ballest-practice-mode/issues/new?template=bug_report.yml)** — just tell me what went wrong. No technical details or logs are required. You'll need a free GitHub account to submit it.
 
 ## v1.0.2 features
 
